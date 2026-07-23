@@ -9,13 +9,13 @@
   --tx: #2f2a21;
   --tx2: #98907f;
 
-  --primary: #bc4f38;
-  --primary-btn: #c25742;
+  --primary: #e8a850;
+  --primary-btn: #e8a850;
   --primary-btn-tx: #ffffff;
   --primary-soft: #f8e2d9;
   --hover: #f4e9de;
 
-  --success: #67923d;
+  --success: #5b9e5b;
   --warn: #c79016;
   --danger: #c9503c;
   --notice: #cf7a33;
@@ -43,7 +43,7 @@
   --side: #140f0c;
   --line: #32271f;
   --line2: #2c2119;
-  --tx: #ece5d7;
+  --tx: #f0e6d8;
   --tx2: #8f8574;
 
   --primary: #e08268;
@@ -178,6 +178,18 @@ a {
     opacity: 0;
   }
   to {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
     opacity: 1;
   }
 }

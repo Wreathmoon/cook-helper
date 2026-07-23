@@ -1,9 +1,11 @@
 'use client';
-import React from 'react';
+import React, { Suspense } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useThemeStore } from '@/store/theme-store';
 import { signOut } from '@/app/actions/auth';
+import { Button } from 'antd';
+import { UserOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons';
 
 type IconProps = { size?: number };
 
@@ -66,13 +68,110 @@ function CalendarIcon({ size = 16 }: IconProps) {
   );
 }
 
-const NAV_ITEMS = [
+interface NavItem {
+  key: string;
+  label: string;
+  icon: React.ComponentType<IconProps>;
+}
+
+const AUTH_NAV_ITEMS: NavItem[] = [
   { key: '/recommend', label: '智能推荐', icon: RecommendIcon },
   { key: '/recipes', label: '菜谱库', icon: RecipesIcon },
   { key: '/inventory', label: '食材库存', icon: InventoryIcon },
   { key: '/utensils', label: '我的厨具', icon: UtensilsIcon },
   { key: '/calendar', label: '烹饪日历', icon: CalendarIcon },
 ];
+
+const TAB_KEYS = ['recommend', 'recipes', 'inventory', 'utensils', 'calendar'];
+
+function GuestNav() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'recommend';
+
+  return (
+    <nav
+      style={{
+        flex: 1,
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        padding: '4px 12px',
+      }}
+    >
+      {AUTH_NAV_ITEMS.map((item, i) => {
+        const tabKey = TAB_KEYS[i];
+        const active = pathname === '/demo' && activeTab === tabKey;
+        const Icon = item.icon;
+        return (
+          <Link
+            key={item.key}
+            href={`/demo?tab=${tabKey}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '10px 16px',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: active ? 600 : 400,
+              color: active ? 'var(--primary)' : 'var(--tx)',
+              background: active ? 'var(--primary-soft)' : 'transparent',
+              textDecoration: 'none',
+            }}
+          >
+            <Icon />
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function AuthNav() {
+  const pathname = usePathname();
+
+  return (
+    <nav
+      style={{
+        flex: 1,
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        padding: '4px 12px',
+      }}
+    >
+      {AUTH_NAV_ITEMS.map((item) => {
+        const active = pathname === item.key || pathname?.startsWith(`${item.key}/`);
+        const Icon = item.icon;
+        return (
+          <Link
+            key={item.key}
+            href={item.key}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '10px 16px',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: active ? 600 : 400,
+              color: active ? 'var(--primary)' : 'var(--tx)',
+              background: active ? 'var(--primary-soft)' : 'transparent',
+              textDecoration: 'none',
+            }}
+          >
+            <Icon />
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
 
 export interface AppLayoutUser {
   email?: string | null;
@@ -86,13 +185,12 @@ export function AppLayout({
   children: React.ReactNode;
   user?: AppLayoutUser | null;
 }) {
-  const pathname = usePathname();
   const router = useRouter();
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
   const toggleTheme = useThemeStore((state) => state.toggleTheme);
+  const isGuest = !user;
 
   const displayName = user?.name || user?.email || '游客';
-  const displayEmail = user?.email && user?.email !== displayName ? user.email : null;
   const initial = displayName.charAt(0).toUpperCase();
 
   const handleSignOut = async () => {
@@ -141,42 +239,13 @@ export function AppLayout({
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)' }}>Cook Helper</div>
         </div>
 
-        <nav
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            padding: '4px 12px',
-          }}
-        >
-          {NAV_ITEMS.map((item) => {
-            const active = pathname === item.key || pathname?.startsWith(`${item.key}/`);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.key}
-                href={item.key}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '10px 16px',
-                  borderRadius: 10,
-                  fontSize: 13,
-                  fontWeight: active ? 600 : 400,
-                  color: active ? 'var(--primary)' : 'var(--tx)',
-                  background: active ? 'var(--primary-soft)' : 'transparent',
-                  textDecoration: 'none',
-                }}
-              >
-                <Icon />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        {isGuest ? (
+          <Suspense fallback={<nav style={{ flex: 1 }} />}>
+            <GuestNav />
+          </Suspense>
+        ) : (
+          <AuthNav />
+        )}
 
         <div
           style={{
@@ -187,95 +256,165 @@ export function AppLayout({
             borderTop: '1px solid var(--line)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                flexShrink: 0,
-                background: 'var(--primary-soft)',
-                color: 'var(--primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 13,
-                fontWeight: 700,
-              }}
-            >
-              {initial}
-            </div>
-            <div style={{ overflow: 'hidden', flex: 1 }}>
-              <div
-                style={{
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  color: 'var(--tx)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {displayName}
-              </div>
-              {displayEmail && (
+          {isGuest ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <div
                   style={{
-                    fontSize: 11,
-                    color: 'var(--tx2)',
+                    width: 32,
+                    height: 32,
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    background: 'var(--primary-soft)',
+                    color: 'var(--primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  游
+                </div>
+                <div style={{ overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: 'var(--tx)',
+                    }}
+                  >
+                    游客
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--tx2)' }}>只读 Demo</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  title={isDarkMode ? '切换到浅色' : '切换到深色'}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    marginLeft: 'auto',
+                    flexShrink: 0,
+                    borderRadius: 8,
+                    border: '1px solid var(--line)',
+                    background: 'var(--panel)',
+                    color: 'var(--tx)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {isDarkMode ? <MoonOutlined /> : <SunOutlined />}
+                </button>
+              </div>
+              <Button
+                type="primary"
+                block
+                size="small"
+                icon={<UserOutlined />}
+                onClick={() => router.push('/login')}
+              >
+                登录 / 注册
+              </Button>
+            </>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  background: 'var(--primary-soft)',
+                  color: 'var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
+              >
+                {initial}
+              </div>
+              <div style={{ overflow: 'hidden', flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: 'var(--tx)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                   }}
                 >
-                  {displayEmail}
+                  {displayName}
                 </div>
-              )}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              style={{
-                flex: 1,
-                height: 26,
-                borderRadius: 8,
-                border: '1px solid var(--line)',
-                background: 'var(--panel)',
-                color: 'var(--tx)',
-                fontSize: 12,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-              }}
-            >
-              <span aria-hidden>◐</span>
-              {isDarkMode ? '深色' : '浅色'}
-            </button>
-            {user && (
+              </div>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                title={isDarkMode ? '切换到浅色' : '切换到深色'}
+                style={{
+                  width: 24,
+                  height: 24,
+                  marginLeft: 'auto',
+                  flexShrink: 0,
+                  borderRadius: 8,
+                  border: '1px solid var(--line)',
+                  background: 'var(--panel)',
+                  color: 'var(--tx)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {isDarkMode ? <MoonOutlined /> : <SunOutlined />}
+              </button>
               <button
                 type="button"
                 onClick={handleSignOut}
                 title="退出登录"
                 style={{
-                  width: 26, height: 26, borderRadius: 8, flexShrink: 0,
+                  width: 24,
+                  height: 24,
+                  flexShrink: 0,
+                  borderRadius: 8,
                   border: '1px solid var(--line)',
-                  background: 'var(--panel)', color: 'var(--tx2)',
-                  fontSize: 12, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'var(--panel)',
+                  color: 'var(--tx2)',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
                 ↩
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </aside>
 
       <main style={{ flex: 1, overflowX: 'auto', height: '100vh' }}>
+        {isGuest && (
+          <div
+            style={{
+              padding: '8px 16px',
+              background: 'var(--warn-bg)',
+              color: 'var(--warn)',
+              fontSize: 12,
+              textAlign: 'center',
+              fontWeight: 600,
+            }}
+          >
+            只读体验 Demo · 演示数据 · 修改功能已锁定
+          </div>
+        )}
         <div style={{ minWidth: 1000, padding: 24 }}>{children}</div>
       </main>
     </div>
