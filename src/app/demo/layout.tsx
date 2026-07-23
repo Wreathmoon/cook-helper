@@ -3,7 +3,7 @@ import React, { Suspense } from 'react';
 import { Button } from 'antd';
 import { LoginOutlined, UserAddOutlined } from '@ant-design/icons';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useThemeStore } from '@/store/theme-store';
 import { TEXT } from '@/lib/constants/text';
 
@@ -15,8 +15,35 @@ const NAV_ITEMS = [
   { key: '/demo?tab=calendar', label: '烹饪日历' },
 ];
 
-export default function DemoLayout({ children }: { children: React.ReactNode }) {
+function DemoNav() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  return (
+    <nav style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 12px' }}>
+      {NAV_ITEMS.map((item) => {
+        const itemTab = new URLSearchParams(item.key.split('?')[1] || '').get('tab') || 'recommend';
+        const active = pathname === '/demo' && searchParams.get('tab') === itemTab;
+        return (
+          <Link key={item.key} href={item.key}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 16px', borderRadius: 10,
+              fontSize: 13, fontWeight: active ? 600 : 400,
+              color: active ? 'var(--primary)' : 'var(--tx)',
+              background: active ? 'var(--primary-soft)' : 'transparent',
+              textDecoration: 'none',
+            }}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+export default function DemoLayout({ children }: { children: React.ReactNode }) {
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
   const toggleTheme = useThemeStore((state) => state.toggleTheme);
 
@@ -37,27 +64,9 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)' }}>Cook Helper</div>
         </div>
 
-        <nav style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 12px' }}>
-          {NAV_ITEMS.map((item) => {
-            const searchParams = new URLSearchParams(item.key.split('?')[1] || '');
-            const tab = searchParams.get('tab') || 'recommend';
-            const active = pathname === '/demo' && new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('tab') === tab;
-            return (
-              <Link key={item.key} href={item.key}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '10px 16px', borderRadius: 10,
-                  fontSize: 13, fontWeight: active ? 600 : 400,
-                  color: active ? 'var(--primary)' : 'var(--tx)',
-                  background: active ? 'var(--primary-soft)' : 'transparent',
-                  textDecoration: 'none',
-                }}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <Suspense fallback={<nav style={{ flex: 1 }} />}>
+          <DemoNav />
+        </Suspense>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 16px 16px', borderTop: '1px solid var(--line)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

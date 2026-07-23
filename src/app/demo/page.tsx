@@ -380,8 +380,7 @@ function RecipesSection() {
         onCancel={() => setSelectedRecipe(null)}
         footer={null}
         width={900}
-        styles={{ body: { padding: 0, height: 580, display: 'flex', overflow: 'hidden' } }}
-        maskStyle={{ background: 'rgba(30,20,12,.45)' }}
+        styles={{ body: { padding: 0, height: 580, display: 'flex', overflow: 'hidden' }, mask: { background: 'rgba(30,20,12,.45)' } }}
       >
         {selectedRecipe && (
           <>
