@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { message } from 'antd';
 import { getRecommendations, generateShoppingListAction, checkoutShoppingListAction } from '@/app/actions/recommend';
 import { addCalendarEntryAction } from '@/app/actions/calendar';
-import type { RecommendedRecipe, ShoppingListItem } from '@/types';
+import { getListInventory } from '@/app/actions/inventory';
+import { getListUtensils } from '@/app/actions/utensil';
+import type { RecommendedRecipe, ShoppingListItem, Difficulty } from '@/types';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { FilterChips } from '@/components/shared/FilterChips';
@@ -26,7 +28,19 @@ const SPICY_OPTIONS = [
   { label: '中辣', value: '中辣' },
 ];
 
+const DIFFICULTY_LABEL: Record<Difficulty, string> = {
+  easy: '简单',
+  medium: '中等',
+  hard: '困难',
+};
+
 // ─── 局部组件 ────────────────────────────────────────────────────────────────────
+
+const TIER_LABELS: Record<string, string> = {
+  clear_stock: '清库存',
+  can_make_now: '现在能做',
+  need_shopping: '缺料可买',
+};
 
 function MainCard({
   recipe,
@@ -39,11 +53,6 @@ function MainCard({
 }) {
   if (!recipe) return null;
   const r = recipe.recipe;
-  const tierLabels: Record<string, string> = {
-    clear_stock: '清库存',
-    can_make_now: '现在能做',
-    need_shopping: '缺料可买',
-  };
 
   const reasons: string[] = [];
   if (recipe.tier === 'clear_stock' && recipe.clearStockIngredients?.length) {
@@ -106,7 +115,7 @@ function MainCard({
             {r.cook_time_minutes && (
               <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 7, border: '1px solid var(--line)', padding: '1px 7px', fontSize: 10.5, color: 'var(--tx2)' }}>{r.cook_time_minutes}分</span>
             )}
-            <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 7, border: '1px solid var(--line)', padding: '1px 7px', fontSize: 10.5, color: 'var(--tx2)' }}>{tierLabels[recipe.tier] || ''}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 7, border: '1px solid var(--line)', padding: '1px 7px', fontSize: 10.5, color: 'var(--tx2)' }}>{TIER_LABELS[recipe.tier] || ''}</span>
           </div>
 
           <div style={{ fontSize: 11.5, color: 'var(--primary)', fontWeight: 600, marginTop: 4 }}>为什么推荐它：</div>
@@ -323,6 +332,23 @@ export default function RecommendPage() {
   // 详情弹窗
   const [detailRecipe, setDetailRecipe] = useState<RecommendedRecipe | null>(null);
 
+  // 统计数据
+  const [inventoryCount, setInventoryCount] = useState(0);
+  const [utensilCount, setUtensilCount] = useState(0);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const [invRes, utilRes] = await Promise.all([
+        getListInventory(),
+        getListUtensils(),
+      ]);
+      if (invRes.data) setInventoryCount(invRes.data.length);
+      if (utilRes.data) setUtensilCount(utilRes.data.length);
+    } catch { /* non-critical */ }
+  }, []);
+
+  useEffect(() => { fetchStats(); }, [fetchStats]);
+
   const fetchRecs = useCallback(async () => {
     setLoading(true);
     try {
@@ -433,7 +459,7 @@ export default function RecommendPage() {
     <div>
       <PageHeader
         title="今晚吃什么？"
-        subtitle={`${allRecs.length} 道推荐菜品`}
+        subtitle={`${inventoryCount}种在库食材·${utensilCount}件厨具·${allRecs.length}道能安排`}
       >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <FilterChips options={TIME_OPTIONS} selected={timeFilter} onChange={setTimeFilter} label="时长" />

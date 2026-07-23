@@ -1,21 +1,28 @@
 'use client';
 import React, { useState, useMemo, Suspense } from 'react';
 import {
-  Tabs, Alert, Tag, Button, Card, Row, Col, Table, Tooltip, message,
-  Modal, Descriptions, Steps, Select, Checkbox, List, Badge, Space, Typography, Divider,
+  Alert, Tag, Button, Row, Col, Tooltip, message,
+  Modal, Steps, Select, Input, Divider, Space, Typography,
+  List, Badge,
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, ShoppingCartOutlined,
   CheckCircleOutlined, ClockCircleOutlined, InfoCircleOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'next/navigation';
-import type { Recipe, CalendarEntry, RecommendedRecipe, InventoryCategory, StockLevel } from '@/types';
+import type {
+  Recipe, CalendarEntry, RecommendedRecipe, ShoppingListItem,
+  InventoryCategory, StockLevel, Difficulty,
+} from '@/types';
 import {
   demoInventory, demoRecipes, demoRecipeIngredients, demoUtensils, demoCalendarEntries,
 } from '@/lib/seed/fixtures';
 import { tierRecipes } from '@/lib/recommend/tiering';
 import { scoreAndSort } from '@/lib/recommend/scoring';
 import { TEXT } from '@/lib/constants/text';
+import { StatusDot } from '@/components/shared/StatusDot';
+import { FilterChips } from '@/components/shared/FilterChips';
+import { SkeletonCard } from '@/components/shared/SkeletonCard';
 
 const { Text, Title } = Typography;
 
@@ -46,6 +53,18 @@ const categoryKeys: InventoryCategory[] = ['vegetable', 'meat', 'egg_dairy_bean'
 const difficultyLabel: Record<string, string> = { easy: '简单', medium: '中等', hard: '困难' };
 
 const roleLabel: Record<string, string> = { main: '主料', auxiliary: '辅料', seasoning: '调料' };
+
+const tierColors: Record<string, string> = {
+  can_make_now: 'success',
+  need_shopping: 'warning',
+  clear_stock: 'notice',
+};
+
+const TIER_LABELS: Record<string, string> = {
+  clear_stock: '清库存',
+  can_make_now: '现在能做',
+  need_shopping: '缺料可买',
+};
 
 // Build recipeIngredients Map for recommend functions
 function buildRecipeIngredientsMap(): Map<string, { inventory_id: string; role: string; amount?: string }[]> {
@@ -78,68 +97,170 @@ function getIngredientStatus(recipeId: string): { name: string; status: StockLev
   });
 }
 
+function getDaysSince(dateStr: string | null | undefined): number | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 // ─── Inventory Section ────────────────────────────────────────────────────────
 
 function InventorySection() {
-  const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [activeCat, setActiveCat] = useState<string>('all');
 
-  const filtered = activeCategory === 'all'
-    ? demoInventory
-    : demoInventory.filter((i) => i.category === activeCategory);
+  const categoryStats = useMemo(() => {
+    const stats: Record<string, { count: number; alert: boolean }> = {};
+    for (const k of categoryKeys) stats[k] = { count: 0, alert: false };
+    for (const item of demoInventory) {
+      if (stats[item.category]) {
+        stats[item.category].count += 1;
+        if (item.stock_level === 'out') stats[item.category].alert = true;
+      }
+    }
+    return stats;
+  }, []);
 
-  const columns = [
-    { title: '名称', dataIndex: 'name', key: 'name' },
-    {
-      title: '分类', dataIndex: 'category', key: 'category',
-      render: (cat: InventoryCategory) => categoryLabels[cat],
-    },
-    {
-      title: '库存', dataIndex: 'stock_level', key: 'stock_level',
-      render: (level: StockLevel) => (
-        <Tag color={stockLevelColor[level]}>{TEXT.inventory.stockLevel[level]}</Tag>
-      ),
-    },
-    { title: '单位', dataIndex: 'unit', key: 'unit', render: (v: string | null) => v || '-' },
-    {
-      title: '操作', key: 'actions', width: 200,
-      render: () => (
-        <Space>
-          <Tooltip title={TEXT.common.demoMode}>
-            <Button icon={<EditOutlined />} disabled size="small">{TEXT.common.edit}</Button>
-          </Tooltip>
-          <Tooltip title={TEXT.common.demoMode}>
-            <Button icon={<DeleteOutlined />} danger disabled size="small">{TEXT.common.delete}</Button>
-          </Tooltip>
-        </Space>
-      ),
-    },
-  ];
+  const filteredItems = useMemo(
+    () => (activeCat === 'all' ? demoInventory : demoInventory.filter((i) => i.category === activeCat)),
+    [activeCat]
+  );
+
+  const handleLevelChange = () => {
+    showDemoWarning();
+  };
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0 }}>{TEXT.inventory.title}</Title>
-        <Tooltip title={TEXT.common.demoMode}>
-          <Button type="primary" icon={<PlusOutlined />} disabled onClick={showDemoWarning}>
-            {TEXT.inventory.addIngredient}
-          </Button>
-        </Tooltip>
+    <div style={{ display: 'flex', gap: 16 }}>
+      {/* 左侧分类 */}
+      <div style={{ width: 172, flexShrink: 0 }}>
+        <div
+          style={{
+            borderRadius: 14, background: 'var(--panel)',
+            border: '1px solid var(--line)', overflow: 'hidden',
+          }}
+        >
+          {[{ key: 'all', label: '全部' }, ...categoryKeys.map((k) => ({ key: k, label: categoryLabels[k] }))].map((cat) => {
+            const stat = categoryStats[cat.key] ?? { count: 0, alert: false };
+            const isActive = activeCat === cat.key;
+            return (
+              <div
+                key={cat.key}
+                onClick={() => setActiveCat(cat.key)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 14px', cursor: 'pointer',
+                  fontSize: 12.5, fontWeight: isActive ? 600 : 400,
+                  color: isActive ? 'var(--primary)' : 'var(--tx)',
+                  background: isActive ? 'var(--primary-soft)' : 'transparent',
+                  borderBottom: '1px solid var(--line2)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    style={{
+                      width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                      background: stat.alert ? 'var(--danger)' : 'transparent',
+                    }}
+                  />
+                  <span>{cat.label}</span>
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--tx2)' }}>{stat.count}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
-      <Tabs
-        activeKey={activeCategory}
-        onChange={setActiveCategory}
-        items={[
-          { key: 'all', label: '全部' },
-          ...categoryKeys.map((k) => ({ key: k, label: categoryLabels[k] })),
-        ]}
-      />
-      <Table
-        dataSource={filtered}
-        columns={columns}
-        rowKey="id"
-        pagination={false}
-        size="middle"
-      />
+
+      {/* 右侧表格 */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            borderRadius: 14, background: 'var(--panel)',
+            border: '1px solid var(--line)', overflow: 'hidden',
+          }}
+        >
+          {/* 表头 */}
+          <div style={{
+            display: 'flex', padding: '10px 14px', gap: 16,
+            fontSize: 11.5, fontWeight: 600, color: 'var(--tx2)',
+            borderBottom: '1px solid var(--line2)',
+          }}>
+            <span style={{ width: 130, flexShrink: 0 }}>名称</span>
+            <span style={{ width: 90, flexShrink: 0 }}>大概总量</span>
+            <span style={{ width: 190, flexShrink: 0 }}>库存档位</span>
+            <span style={{ flex: 1 }}>提示</span>
+            <span style={{ width: 60, flexShrink: 0, textAlign: 'center' }}>操作</span>
+          </div>
+
+          {/* 内容 */}
+          <div>
+            {filteredItems.map((item) => {
+              const days = getDaysSince(item.last_restocked_at);
+              let hintText = '';
+              let hintColor = 'var(--tx2)';
+              if (item.stock_level === 'out') {
+                hintText = '已提示到购物清单';
+                hintColor = 'var(--warn)';
+              } else if (days !== null) {
+                const threshold = item.category === 'vegetable' ? 3 : item.category === 'meat' ? 5 : 7;
+                if (days >= threshold) {
+                  hintText = `${days}天前入库 · 建议先吃`;
+                  hintColor = 'var(--notice)';
+                } else {
+                  hintText = `${days}天前入库`;
+                }
+              } else {
+                hintText = '—';
+              }
+              return (
+                <div key={item.id} style={{
+                  display: 'flex', alignItems: 'center', padding: '10px 14px', gap: 16,
+                  fontSize: 12.5, color: 'var(--tx)',
+                  borderBottom: '1px solid var(--line2)',
+                }}>
+                  <div style={{ width: 130, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{
+                      width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                      background: stockLevelColor[item.stock_level],
+                    }} />
+                    <span>{item.name}</span>
+                  </div>
+                  <div style={{ width: 90, flexShrink: 0, fontSize: 12, color: 'var(--tx2)' }}>
+                    {item.total_amount || item.unit || '—'}
+                  </div>
+                  <div style={{ width: 190, flexShrink: 0 }}>
+                    <select
+                      value={item.stock_level}
+                      onChange={handleLevelChange}
+                      onClick={showDemoWarning}
+                      style={{
+                        width: '100%', padding: '3px 8px', borderRadius: 9,
+                        border: '1px solid var(--line)', fontSize: 12,
+                        background: item.stock_level === 'enough' ? 'var(--success-bg)' :
+                          item.stock_level === 'low' ? 'var(--warn-bg)' : 'var(--danger-bg)',
+                        color: item.stock_level === 'enough' ? 'var(--success)' :
+                          item.stock_level === 'low' ? 'var(--warn)' : 'var(--danger)',
+                        fontWeight: 600, cursor: 'pointer',
+                      }}
+                    >
+                      <option value="enough">充足</option>
+                      <option value="low">不多</option>
+                      <option value="out">没了</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1, fontSize: 11, color: hintColor }}>{hintText}</div>
+                  <div style={{ width: 60, flexShrink: 0, textAlign: 'center' }}>
+                    <Tooltip title={TEXT.common.demoMode}>
+                      <Button type="text" size="small" icon={<EditOutlined />} disabled onClick={showDemoWarning}
+                        style={{ color: 'var(--tx2)' }} />
+                    </Tooltip>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -148,152 +269,242 @@ function InventorySection() {
 
 function RecipesSection() {
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [searchText, setSearchText] = useState('');
+
+  const filtered = useMemo(() => {
+    if (!searchText) return demoRecipes;
+    return demoRecipes.filter((r) => r.name.includes(searchText));
+  }, [searchText]);
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>{TEXT.recipes.title}</Title>
-        <Tooltip title={TEXT.common.demoMode}>
-          <Button type="primary" icon={<PlusOutlined />} disabled onClick={showDemoWarning}>
-            {TEXT.recipes.addRecipe}
-          </Button>
-        </Tooltip>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <Input.Search
+            placeholder="搜索菜谱"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            style={{ width: 200 }}
+            size="small"
+          />
+          <Tooltip title={TEXT.common.demoMode}>
+            <Button type="primary" icon={<PlusOutlined />} disabled onClick={showDemoWarning}>
+              {TEXT.recipes.addRecipe}
+            </Button>
+          </Tooltip>
+        </div>
       </div>
-      <Row gutter={[16, 16]}>
-        {demoRecipes.map((recipe) => {
+
+      {/* 第一张：新建菜谱卡 */}
+      <div
+        onClick={showDemoWarning}
+        style={{
+          display: 'inline-flex', width: 176, borderRadius: 14, cursor: 'pointer',
+          border: '1.5px dashed var(--primary)',
+          background: 'var(--primary-soft)', marginBottom: 12, marginRight: 12,
+          flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          padding: '24px 12px', gap: 6, verticalAlign: 'top',
+        }}
+      >
+        <PlusOutlined style={{ fontSize: 20, color: 'var(--primary)' }} />
+        <span style={{ fontSize: 12.5, color: 'var(--primary)', fontWeight: 600 }}>新建菜谱</span>
+      </div>
+
+      {/* 瀑布流 */}
+      <div style={{ columns: '176px 4', columnGap: 12 }}>
+        {filtered.map((recipe) => {
           const ingStatus = getIngredientStatus(recipe.id);
           const allEnough = ingStatus.every((i) => i.status === 'enough');
-          const hasOut = ingStatus.some((i) => i.status === 'out');
+          const missingCount = ingStatus.filter((i) => i.status !== 'enough').length;
           return (
-            <Col key={recipe.id} xs={24} sm={12} lg={8} xl={6}>
-              <Card
-                hoverable
-                title={recipe.name}
-                extra={
-                  <Badge
-                    status={allEnough ? 'success' : hasOut ? 'error' : 'warning'}
-                    text={allEnough ? '食材齐全' : hasOut ? '缺少食材' : '部分不足'}
-                  />
-                }
-                onClick={() => setSelectedRecipe(recipe)}
-                actions={[
-                  <Tooltip title={TEXT.common.demoMode} key="edit">
-                    <Button type="link" disabled icon={<EditOutlined />} onClick={showDemoWarning} />
-                  </Tooltip>,
-                  <Tooltip title={TEXT.common.demoMode} key="del">
-                    <Button type="link" danger disabled icon={<DeleteOutlined />} onClick={showDemoWarning} />
-                  </Tooltip>,
-                ]}
-              >
-                <div style={{ marginBottom: 8 }}>
-                  {recipe.difficulty && (
-                    <Tag>{difficultyLabel[recipe.difficulty] || recipe.difficulty}</Tag>
-                  )}
-                  {recipe.cook_time_minutes && (
-                    <Tag icon={<ClockCircleOutlined />}>{recipe.cook_time_minutes}分钟</Tag>
-                  )}
-                  {recipe.attributes?.method?.map((m) => <Tag key={m} color="blue">{m}</Tag>)}
+            <div
+              key={recipe.id}
+              onClick={() => setSelectedRecipe(recipe)}
+              style={{
+                breakInside: 'avoid', marginBottom: 12, borderRadius: 14,
+                background: 'var(--panel)', border: '1px solid var(--line)',
+                overflow: 'hidden', cursor: 'pointer',
+                transition: 'transform .15s, box-shadow .15s',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)';
+                (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 14px rgba(60,50,30,.1)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.transform = '';
+                (e.currentTarget as HTMLElement).style.boxShadow = '';
+              }}
+            >
+              {/* 图片占位 */}
+              <div style={{
+                height: 92 + (recipe.id.charCodeAt(recipe.id.length - 1) % 60),
+                background: 'linear-gradient(135deg, var(--primary-soft), var(--hover))',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, color: 'var(--tx2)',
+              }}>
+                成品照
+              </div>
+              {/* 内容 */}
+              <div style={{ padding: '8px 10px 10px' }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--tx)', marginBottom: 4 }}>
+                  {recipe.name}
                 </div>
-                <div style={{ fontSize: 12, color: '#999' }}>
-                  {ingStatus.slice(0, 4).map((ing, idx) => (
-                    <Tag
-                      key={idx}
-                      color={stockLevelColor[ing.status]}
-                      style={{ marginBottom: 4 }}
-                    >
-                      {ing.name}
-                    </Tag>
-                  ))}
-                  {ingStatus.length > 4 && <Text type="secondary"> +{ingStatus.length - 4}</Text>}
+                {recipe.attributes?.flavor && (
+                  <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 6, lineHeight: 1.4 }}>
+                    {String(recipe.attributes.flavor)}
+                  </div>
+                )}
+                <Divider style={{ margin: '4px 0' }} />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{
+                      width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                      background: allEnough ? 'var(--success)' : missingCount > 0 ? 'var(--danger)' : 'var(--warn)',
+                    }} />
+                    <span style={{ fontSize: 11, color: 'var(--tx2)' }}>
+                      {allEnough ? '食材全齐' : `缺${missingCount}样`}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 10.5, color: 'var(--tx2)' }}></span>
                 </div>
-              </Card>
-            </Col>
+              </div>
+            </div>
           );
         })}
-      </Row>
+      </div>
 
+      {/* 详情弹窗 */}
       <Modal
-        title={selectedRecipe?.name}
         open={!!selectedRecipe}
         onCancel={() => setSelectedRecipe(null)}
         footer={null}
-        width={640}
+        width={900}
+        styles={{ body: { padding: 0, height: 580, display: 'flex', overflow: 'hidden' } }}
+        maskStyle={{ background: 'rgba(30,20,12,.45)' }}
       >
         {selectedRecipe && (
-          <div>
-            <Descriptions column={2} size="small" style={{ marginBottom: 16 }}>
-              {selectedRecipe.difficulty && (
-                <Descriptions.Item label={TEXT.recipes.difficulty}>
-                  {difficultyLabel[selectedRecipe.difficulty]}
-                </Descriptions.Item>
-              )}
-              {selectedRecipe.cook_time_minutes && (
-                <Descriptions.Item label={TEXT.recipes.cookTime}>
-                  {selectedRecipe.cook_time_minutes} 分钟
-                </Descriptions.Item>
-              )}
-              {selectedRecipe.attributes?.spiciness && (
-                <Descriptions.Item label={TEXT.recipes.attributes.spiciness}>
-                  {selectedRecipe.attributes.spiciness}
-                </Descriptions.Item>
-              )}
-              {selectedRecipe.attributes?.diet_type && (
-                <Descriptions.Item label={TEXT.recipes.attributes.dietType}>
-                  {selectedRecipe.attributes.diet_type}
-                </Descriptions.Item>
-              )}
-              {selectedRecipe.attributes?.cuisine && (
-                <Descriptions.Item label={TEXT.recipes.attributes.cuisine}>
-                  {selectedRecipe.attributes.cuisine}
-                </Descriptions.Item>
-              )}
-            </Descriptions>
-
-            <Divider orientation="left" style={{ marginTop: 0 }}>{TEXT.recipes.ingredients}</Divider>
-            {(() => {
-              const ings = getIngredientStatus(selectedRecipe.id);
-              const grouped = { main: ings.filter(i => i.role === 'main'), auxiliary: ings.filter(i => i.role === 'auxiliary'), seasoning: ings.filter(i => i.role === 'seasoning') };
-              return (
-                <div>
-                  {(['main', 'auxiliary', 'seasoning'] as const).map(role => {
-                    const items = grouped[role];
-                    if (items.length === 0) return null;
+          <>
+            {/* 左：图片 */}
+            <div style={{
+              width: '46%', flexShrink: 0,
+              background: 'linear-gradient(135deg, var(--primary-soft), var(--hover))',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--tx2)', fontSize: 13,
+            }}>
+              成品照
+            </div>
+            {/* 右：内容 */}
+            <div style={{ flex: 1, padding: 20, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 19, fontWeight: 700, color: 'var(--tx)' }}>{selectedRecipe.name}</span>
+                  {(() => {
+                    const ingStatus = getIngredientStatus(selectedRecipe.id);
+                    const allEnough = ingStatus.every((i) => i.status === 'enough');
                     return (
-                      <div key={role} style={{ marginBottom: 8 }}>
-                        <Text type="secondary" style={{ fontSize: 12 }}>{roleLabel[role]}：</Text>
-                        {items.map((ing, idx) => (
-                          <Tag key={idx} color={stockLevelColor[ing.status]} style={{ marginBottom: 4 }}>
-                            {ing.name}
-                          </Tag>
-                        ))}
-                      </div>
+                      <span style={{
+                        fontSize: 10.5, borderRadius: 7, padding: '1px 7px',
+                        background: allEnough ? 'var(--success-bg)' : 'var(--warn-bg)',
+                        color: allEnough ? 'var(--success)' : 'var(--warn)',
+                      }}>
+                        {allEnough ? '食材全齐' : '缺料'}
+                      </span>
                     );
-                  })}
+                  })()}
                 </div>
-              );
-            })()}
+                <Button type="text" size="small" onClick={() => setSelectedRecipe(null)} style={{ color: 'var(--tx2)' }}>✕</Button>
+              </div>
 
-            {selectedRecipe.steps && selectedRecipe.steps.length > 0 && (
-              <>
-                <Divider orientation="left">{TEXT.recipes.steps}</Divider>
-                <Steps
-                  direction="vertical"
-                  size="small"
-                  items={selectedRecipe.steps.map((s) => ({
-                    title: `步骤 ${s.step_number}`,
-                    description: s.description,
-                  }))}
-                />
-              </>
-            )}
+              <div style={{ fontSize: 11.5, color: 'var(--tx2)', marginBottom: 12 }}>
+                做过 3 次 · 需要：炒锅
+              </div>
 
-            {selectedRecipe.tips && (
-              <>
-                <Divider orientation="left">{TEXT.recipes.tips}</Divider>
-                <Text>{selectedRecipe.tips}</Text>
-              </>
-            )}
-          </div>
+              {/* 标签 */}
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 14 }}>
+                {selectedRecipe.difficulty && (
+                  <span style={{ borderRadius: 7, border: '1px solid var(--line)', padding: '1px 7px', fontSize: 10.5, color: 'var(--tx2)' }}>
+                    {difficultyLabel[selectedRecipe.difficulty]}
+                  </span>
+                )}
+                {selectedRecipe.cook_time_minutes && (
+                  <span style={{ borderRadius: 7, border: '1px solid var(--line)', padding: '1px 7px', fontSize: 10.5, color: 'var(--tx2)' }}>
+                    {selectedRecipe.cook_time_minutes}分
+                  </span>
+                )}
+              </div>
+
+              {/* 食材清单 */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)', marginBottom: 6 }}>食材</div>
+                {(() => {
+                  const ings = getIngredientStatus(selectedRecipe.id);
+                  return ings.map((ing, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', fontSize: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: stockLevelColor[ing.status] }} />
+                        <span style={{ color: 'var(--tx)' }}>{ing.name}</span>
+                        <span style={{ color: 'var(--tx2)', fontSize: 11 }}>
+                          {ings.find((x) => x.name === ing.name)?.role === 'main' ? '主料' :
+                           ings.find((x) => x.name === ing.name)?.role === 'seasoning' ? '调料' : '辅料'}
+                        </span>
+                      </div>
+                      <span style={{
+                        fontSize: 11, fontWeight: 600,
+                        color: ing.status === 'enough' ? 'var(--success)' :
+                               ing.status === 'low' ? 'var(--warn)' : 'var(--danger)',
+                      }}>
+                        {ing.status === 'enough' ? '充足' : ing.status === 'low' ? '不多' : '没了'}
+                      </span>
+                    </div>
+                  ));
+                })()}
+              </div>
+
+              {/* 步骤 */}
+              {selectedRecipe.steps && selectedRecipe.steps.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)', marginBottom: 6 }}>步骤</div>
+                  {selectedRecipe.steps.map((s) => (
+                    <div key={s.step_number} style={{ display: 'flex', gap: 8, padding: '4px 0' }}>
+                      <div style={{
+                        width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
+                        background: 'var(--primary)', color: '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 10, fontWeight: 600, marginTop: 1,
+                      }}>
+                        {s.step_number}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--tx)', lineHeight: 1.5 }}>{s.description}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Tips */}
+              {selectedRecipe.tips && (
+                <div style={{
+                  borderRadius: 10, padding: 10,
+                  background: 'var(--primary-soft)', color: 'var(--primary)',
+                  fontSize: 12, lineHeight: 1.5, marginBottom: 14,
+                }}>
+                  💡 {selectedRecipe.tips}
+                </div>
+              )}
+
+              {/* 底部按钮 */}
+              <div style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--line2)', paddingTop: 12 }}>
+                <Tooltip title={TEXT.common.demoMode}>
+                  <Button type="primary" disabled onClick={showDemoWarning} style={{ flex: 1 }}>
+                    今天做它 → 写入日历
+                  </Button>
+                </Tooltip>
+                <Tooltip title={TEXT.common.demoMode}>
+                  <Button disabled onClick={showDemoWarning}>✏ 编辑</Button>
+                </Tooltip>
+              </div>
+            </div>
+          </>
         )}
       </Modal>
     </div>
@@ -302,8 +513,23 @@ function RecipesSection() {
 
 // ─── Recommend Section ────────────────────────────────────────────────────────
 
+const TIME_OPTIONS = [
+  { label: '全部', value: '' },
+  { label: '≤15分钟', value: '15' },
+  { label: '≤30分钟', value: '30' },
+];
+
+const SPICY_OPTIONS = [
+  { label: '全部', value: '' },
+  { label: '不辣', value: '不辣' },
+  { label: '微辣', value: '微辣' },
+  { label: '中辣', value: '中辣' },
+];
+
 function RecommendSection() {
   const [selectedRecipes, setSelectedRecipes] = useState<Set<string>>(new Set());
+  const [mainIndex, setMainIndex] = useState(0);
+  const [shoppingChecked, setShoppingChecked] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<{
     maxCookTime?: number;
     spiciness?: string;
@@ -322,7 +548,6 @@ function RecommendSection() {
       recipeIngredients: recipeIngredientsMap,
       recipeUtensils: recipeUtensilsMap,
     });
-
     return scoreAndSort({
       tieredRecipes: tiered,
       calendarEntries: demoCalendarEntries,
@@ -332,13 +557,29 @@ function RecommendSection() {
     });
   }, [recipeIngredientsMap, recipeUtensilsMap, filters]);
 
-  // Shopping list calculation
-  const shoppingList = useMemo(() => {
-    if (selectedRecipes.size === 0) return [];
+  const mainRecipe = recommended.length > 0
+    ? recommended[mainIndex % recommended.length]
+    : null;
+
+  // Pick alternative (non-main) recipes for the grid
+  const altRecipes = recommended.filter((r) => r.recipe.id !== mainRecipe?.recipe.id).slice(0, 12);
+
+  const toggleRecipeSelect = (id: string) => {
+    setSelectedRecipes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Shopping list: from selected recipes missing ingredients + low/out staple/seasoning
+  const shoppingList: ShoppingListItem[] = useMemo(() => {
     const invMap = new Map(demoInventory.map((i) => [i.id, i]));
-    const items: { name: string; category: InventoryCategory; source: string }[] = [];
+    const items: ShoppingListItem[] = [];
     const seen = new Set<string>();
 
+    // From selected recipes
     for (const recipeId of selectedRecipes) {
       const ings = demoRecipeIngredients[recipeId] || [];
       const recipe = demoRecipes.find((r) => r.id === recipeId);
@@ -352,180 +593,279 @@ function RecommendSection() {
               name: inv?.name || '未知食材',
               category: inv?.category || 'vegetable',
               source: recipe?.name || '',
+              inventoryId: ing.inventory_id,
             });
           }
         }
       }
     }
+
+    // Low/out staples and seasoning
+    for (const inv of demoInventory) {
+      if (seen.has(inv.id)) continue;
+      if ((inv.category === 'staple' || inv.category === 'seasoning') && inv.stock_level !== 'enough') {
+        seen.add(inv.id);
+        items.push({
+          name: inv.name,
+          category: inv.category,
+          source: '库存不足',
+          inventoryId: inv.id,
+        });
+      }
+    }
+
     return items;
   }, [selectedRecipes]);
 
-  const tiered = useMemo(() => {
-    const groups: Record<string, RecommendedRecipe[]> = {
-      can_make_now: [],
-      need_shopping: [],
-      clear_stock: [],
-    };
-    for (const r of recommended) {
-      groups[r.tier]?.push(r);
-    }
-    return groups;
-  }, [recommended]);
-
-  const toggleRecipeSelect = (id: string) => {
-    setSelectedRecipes((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const tierColors: Record<string, string> = {
-    can_make_now: 'green',
-    need_shopping: 'orange',
-    clear_stock: 'blue',
+  const toggleShopping = (key: string) => {
+    showDemoWarning();
   };
 
   return (
-    <div>
-      <Title level={4}>{TEXT.recommend.title}</Title>
-
-      {/* Filters */}
-      <Card size="small" style={{ marginBottom: 16 }}>
-        <Space wrap>
-          <Text type="secondary">{TEXT.recommend.filters}：</Text>
-          <Select
-            placeholder="辣度"
-            allowClear
-            style={{ width: 120 }}
-            onChange={(v) => setFilters((f) => ({ ...f, spiciness: v }))}
-            options={[
-              { value: '不辣', label: '不辣' },
-              { value: '微辣', label: '微辣' },
-              { value: '中辣', label: '中辣' },
-            ]}
-          />
-          <Select
-            placeholder="荤素"
-            allowClear
-            style={{ width: 120 }}
-            onChange={(v) => setFilters((f) => ({ ...f, dietType: v }))}
-            options={[
-              { value: '纯荤', label: '纯荤' },
-              { value: '荤素搭配', label: '荤素搭配' },
-              { value: '纯素', label: '纯素' },
-            ]}
-          />
-          <Select
-            placeholder="烹饪时间"
-            allowClear
-            style={{ width: 140 }}
-            onChange={(v) => setFilters((f) => ({ ...f, maxCookTime: v }))}
-            options={[
-              { value: 15, label: '15分钟内' },
-              { value: 30, label: '30分钟内' },
-              { value: 60, label: '1小时内' },
-            ]}
-          />
-        </Space>
-      </Card>
-
-      {/* Tiered recommendations */}
-      {(['can_make_now', 'clear_stock', 'need_shopping'] as const).map((tier) => {
-        const items = tiered[tier];
-        if (!items || items.length === 0) return null;
-        return (
-          <div key={tier} style={{ marginBottom: 24 }}>
-            <Title level={5}>
-              <Tag color={tierColors[tier]}>{TEXT.recommend.tiers[tier]}</Tag>
-            </Title>
-            <Row gutter={[12, 12]}>
-              {items.map((rec) => (
-                <Col key={rec.recipe.id} xs={24} sm={12} lg={8}>
-                  <Card
-                    size="small"
-                    title={
-                      <Space>
-                        <Checkbox
-                          checked={selectedRecipes.has(rec.recipe.id)}
-                          onChange={() => toggleRecipeSelect(rec.recipe.id)}
-                        />
-                        <span>{rec.recipe.name}</span>
-                      </Space>
-                    }
-                    extra={
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        评分: {rec.score.toFixed(2)}
-                      </Text>
-                    }
-                  >
-                    {rec.missingIngredients && (
-                      <div style={{ marginBottom: 4 }}>
-                        <Text type="secondary" style={{ fontSize: 12 }}>缺少：</Text>
-                        {rec.missingIngredients.map((m, i) => (
-                          <Tag key={i} color="red" style={{ fontSize: 11 }}>{m}</Tag>
-                        ))}
-                      </div>
-                    )}
-                    {rec.clearStockIngredients && (
-                      <div>
-                        <Text type="secondary" style={{ fontSize: 12 }}>可清库存：</Text>
-                        {rec.clearStockIngredients.map((m, i) => (
-                          <Tag key={i} color="blue" style={{ fontSize: 11 }}>{m}</Tag>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-                </Col>
-              ))}
-            </Row>
+    <div style={{ display: 'flex', gap: 16 }}>
+      {/* 左中：推荐内容 */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* 头部 */}
+        <div style={{ marginBottom: 16 }}>
+          <Title level={4} style={{ margin: 0 }}>今晚吃什么？</Title>
+          <div style={{ fontSize: 11.5, color: 'var(--tx2)', marginTop: 4 }}>
+            {demoInventory.length}种在库食材 · {demoUtensils.length}件厨具 · {recommended.length}道能安排
           </div>
-        );
-      })}
+        </div>
 
-      {recommended.length === 0 && (
-        <Alert message="当前没有可推荐的菜品，试试调整筛选条件" type="info" showIcon />
-      )}
+        {/* 筛选 chips */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          <FilterChips
+            options={TIME_OPTIONS}
+            selected={filters.maxCookTime ? [filters.maxCookTime.toString()] : []}
+            onChange={(vals) => setFilters((f) => ({ ...f, maxCookTime: vals.length > 0 ? Number(vals[0]) : undefined }))}
+          />
+          <FilterChips
+            options={SPICY_OPTIONS}
+            selected={filters.spiciness ? [filters.spiciness] : []}
+            onChange={(vals) => setFilters((f) => ({ ...f, spiciness: vals.length > 0 ? vals[0] : undefined }))}
+          />
+        </div>
 
-      {/* Shopping list */}
-      {selectedRecipes.size > 0 && (
-        <Card
-          title={
-            <Space>
-              <ShoppingCartOutlined />
-              <span>{TEXT.recommend.shoppingList}</span>
-              <Badge count={shoppingList.length} />
-            </Space>
-          }
-          style={{ marginTop: 16 }}
-          extra={
-            <Tooltip title={TEXT.common.demoMode}>
-              <Button type="primary" disabled onClick={showDemoWarning}>
-                {TEXT.recommend.checkout}
-              </Button>
-            </Tooltip>
-          }
-        >
-          {shoppingList.length > 0 ? (
-            <List
-              size="small"
-              dataSource={shoppingList}
-              renderItem={(item) => (
-                <List.Item>
-                  <Space>
-                    <Tag>{categoryLabels[item.category]}</Tag>
-                    <Text>{item.name}</Text>
-                    <Text type="secondary">（来自: {item.source}）</Text>
-                  </Space>
-                </List.Item>
-              )}
-            />
-          ) : (
-            <Alert message="所选菜品的食材都已齐全！" type="success" showIcon />
+        {mainRecipe ? (
+          <>
+            {/* 主推卡 */}
+            <div style={{
+              width: '100%', maxWidth: 600, margin: '0 auto', borderRadius: 14,
+              background: 'var(--panel)', border: '1px solid var(--line)',
+              boxShadow: '0 1px 2px rgba(60,50,30,.05), 0 4px 14px rgba(60,50,30,.05)',
+              overflow: 'hidden',
+            }}>
+              <div style={{ display: 'flex', padding: 16, gap: 16 }}>
+                {/* 图片 */}
+                <div style={{
+                  width: 220, height: 180, borderRadius: 10, flexShrink: 0,
+                  background: 'linear-gradient(135deg, var(--primary-soft), var(--hover))',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--tx2)', fontSize: 11,
+                }}>
+                  成品照
+                </div>
+                {/* 信息 */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <StatusDot
+                      status={mainRecipe.tier === 'can_make_now' ? 'good' :
+                             mainRecipe.tier === 'need_shopping' ? 'warn' : 'notice'}
+                    />
+                    <span style={{ fontSize: 19, fontWeight: 700, color: 'var(--tx)' }}>
+                      {mainRecipe.recipe.name}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {mainRecipe.recipe.attributes?.method?.map((m) => (
+                      <span key={m} style={{
+                        display: 'inline-flex', alignItems: 'center', borderRadius: 7,
+                        border: '1px solid var(--line)', padding: '1px 7px',
+                        fontSize: 10.5, color: 'var(--tx2)',
+                      }}>{m}</span>
+                    ))}
+                    {mainRecipe.recipe.cook_time_minutes && (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', borderRadius: 7,
+                        border: '1px solid var(--line)', padding: '1px 7px',
+                        fontSize: 10.5, color: 'var(--tx2)',
+                      }}>{mainRecipe.recipe.cook_time_minutes}分</span>
+                    )}
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', borderRadius: 7,
+                      border: '1px solid var(--line)', padding: '1px 7px',
+                      fontSize: 10.5, color: 'var(--tx2)',
+                    }}>{mainRecipe.recipe.difficulty ? difficultyLabel[mainRecipe.recipe.difficulty] : ''}</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--primary)', fontWeight: 600, marginTop: 4 }}>
+                    为什么推荐它：
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {(() => {
+                      const reasons: string[] = [];
+                      if (mainRecipe.tier === 'clear_stock' && mainRecipe.clearStockIngredients?.length) {
+                        reasons.push(`${mainRecipe.clearStockIngredients.join('、')} 已放多天，建议尽快吃`);
+                      }
+                      if (mainRecipe.missingIngredients?.length && mainRecipe.missingIngredients.length <= 2) {
+                        reasons.push(`缺 ${mainRecipe.missingIngredients.join('、')}，买齐就能做`);
+                      }
+                      if (!mainRecipe.missingIngredients?.length) {
+                        reasons.push('所有食材齐全 ✓');
+                      }
+                      if (mainRecipe.recipe.cook_time_minutes && mainRecipe.recipe.cook_time_minutes <= 15) {
+                        reasons.push('快手菜，只需几分钟');
+                      }
+                      if (reasons.length === 0) reasons.push('推荐做这道 ✨');
+                      return reasons.slice(0, 4).map((reason, i) => (
+                        <div key={i} style={{ fontSize: 12, color: 'var(--tx)', paddingLeft: 10, position: 'relative' }}>
+                          <span style={{ position: 'absolute', left: 0, top: 2, color: 'var(--primary)' }}>·</span>
+                          {reason}
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 'auto', paddingTop: 8 }}>
+                    <Tooltip title={TEXT.common.demoMode}>
+                      <Button type="primary" disabled onClick={showDemoWarning} style={{ flex: 1 }}>
+                        就做这道
+                      </Button>
+                    </Tooltip>
+                    <Button onClick={() => setMainIndex((i) => (i + 1) % recommended.length)}>
+                      换一个 ↻
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--tx2)', marginTop: 8 }}>
+              按住推荐能做的、缺料的、需清库存的菜优先展示
+            </div>
+
+            {/* 备选推荐 */}
+            <div style={{ marginTop: 20 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)', marginBottom: 10 }}>
+                备选推荐
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                {altRecipes.map((rec) => {
+                  const ingStatus = getIngredientStatus(rec.recipe.id);
+                  const missingNames = rec.missingIngredients || [];
+                  const isChecked = selectedRecipes.has(rec.recipe.id);
+                  let note = '';
+                  if (missingNames.length > 0) {
+                    note = `缺:${missingNames.slice(0, 2).join('、')}${missingNames.length > 2 ? `+${missingNames.length - 2}` : ''}`;
+                  } else if (rec.clearStockIngredients?.length) {
+                    note = `${rec.clearStockIngredients.slice(0, 2).join('、')}已放${getDaysSince('2026-07-01') || 3}天，建议先吃`;
+                  } else if (rec.recipe.cook_time_minutes && rec.recipe.cook_time_minutes <= 15) {
+                    note = `${rec.recipe.cook_time_minutes}分钟快手`;
+                  } else if (rec.recipe.cook_time_minutes && rec.recipe.cook_time_minutes >= 40) {
+                    note = `要炖${rec.recipe.cook_time_minutes}分钟`;
+                  } else {
+                    note = ingStatus.every((i) => i.status === 'enough') ? '食材全齐' : '需购买';
+                  }
+                  return (
+                    <div
+                      key={rec.recipe.id}
+                      onClick={() => {/* TODO: open detail */}}
+                      style={{
+                        width: 212, borderRadius: 14, cursor: 'pointer',
+                        background: 'var(--panel)', border: '1px solid var(--line)',
+                        padding: 12, transition: 'transform .15s, box-shadow .15s',
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)';
+                        (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 14px rgba(60,50,30,.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLElement).style.transform = '';
+                        (e.currentTarget as HTMLElement).style.boxShadow = '';
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <StatusDot
+                          status={rec.tier === 'can_make_now' ? 'good' :
+                                 rec.tier === 'need_shopping' ? 'warn' : 'notice'}
+                        />
+                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx)', flex: 1 }}>
+                          {rec.recipe.name}
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleRecipeSelect(rec.recipe.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ cursor: 'pointer', accentColor: 'var(--primary)' }}
+                        />
+                      </div>
+                      <div style={{ fontSize: 11, color: ingStatus.every((i) => i.status === 'enough') ? 'var(--success)' : 'var(--tx2)' }}>
+                        {note}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        ) : (
+          <Alert message="当前没有可推荐的菜品，试试调整筛选条件" type="info" showIcon />
+        )}
+      </div>
+
+      {/* 右侧购物清单 */}
+      <div style={{
+        width: 262, flexShrink: 0, borderRadius: 14,
+        background: 'var(--panel)', border: '1px solid var(--line)',
+        padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+        alignSelf: 'flex-start',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ShoppingCartOutlined style={{ color: 'var(--primary)', fontSize: 14 }} />
+          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)' }}>购物清单</span>
+          {shoppingList.length > 0 && (
+            <span style={{
+              fontSize: 11, borderRadius: 7, padding: '0 7px',
+              background: 'var(--primary-soft)', color: 'var(--primary)',
+            }}>
+              {shoppingList.length}
+            </span>
           )}
-        </Card>
-      )}
+        </div>
+        {shoppingList.length === 0 ? (
+          <div style={{
+            fontSize: 11.5, color: 'var(--tx2)', textAlign: 'center', padding: '24px 0',
+          }}>
+            勾选缺料的菜<br />要买的东西会出现在这里
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {shoppingList.map((item, i) => {
+              const key = item.inventoryId || `${item.name}-${i}`;
+              const checked = shoppingChecked.has(key);
+              return (
+                <div
+                  key={key}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0',
+                    fontSize: 12, color: checked ? 'var(--tx2)' : 'var(--tx)',
+                    textDecoration: checked ? 'line-through' : 'none',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleShopping(key)}
+                    style={{ cursor: 'pointer', accentColor: 'var(--primary)' }}
+                  />
+                  <span style={{ flex: 1 }}>{item.name}</span>
+                  <span style={{ fontSize: 10.5, color: 'var(--tx2)' }}>{item.source}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -533,11 +873,11 @@ function RecommendSection() {
 // ─── Calendar Section ─────────────────────────────────────────────────────────
 
 function CalendarSection() {
-  const [currentDate] = useState(new Date(2026, 6, 1)); // July 2026
+  const [currentDate] = useState(new Date(2026, 6, 1));
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
   const recipeMap = useMemo(() => new Map(demoRecipes.map((r) => [r.id, r])), []);
 
-  // Build calendar date map
   const calMap = useMemo(() => {
     const map = new Map<string, CalendarEntry[]>();
     for (const entry of demoCalendarEntries) {
@@ -548,15 +888,18 @@ function CalendarSection() {
     return map;
   }, []);
 
-  // Generate calendar grid
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+
+  // Monday-first calendar
   const firstDay = new Date(year, month, 1).getDay();
+  const mondayOffset = firstDay === 0 ? 6 : firstDay - 1;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+  const weekDays = ['一', '二', '三', '四', '五', '六', '日'];
+  const todayStr = '2026-07-05';
 
   const cells: (number | null)[] = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let i = 0; i < mondayOffset; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
 
@@ -566,76 +909,192 @@ function CalendarSection() {
     return `${year}-${m}-${d}`;
   };
 
+  // Page through months
+  const [viewMonth, setViewMonth] = useState(6); // July
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0 }}>{TEXT.calendar.title}</Title>
-        <Space>
-          <Tooltip title={TEXT.common.demoMode}>
-            <Button icon={<PlusOutlined />} disabled onClick={showDemoWarning}>
-              {TEXT.calendar.addEntry}
-            </Button>
-          </Tooltip>
-        </Space>
-      </div>
-
-      <div style={{ textAlign: 'center', marginBottom: 16 }}>
-        <Title level={5}>{year}年{month + 1}月</Title>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
-        {weekDays.map((w) => (
-          <div key={w} style={{ textAlign: 'center', fontWeight: 'bold', padding: 8, background: '#fafafa' }}>
-            {w}
+    <div style={{ display: 'flex', gap: 16 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* 头部 */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Button size="small" onClick={() => setViewMonth((m) => Math.max(0, m - 1))}>‹</Button>
+            <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx)' }}>
+              {year}年{viewMonth + 1}月
+            </span>
+            <Button size="small" onClick={() => setViewMonth((m) => Math.min(11, m + 1))}>›</Button>
+            <Button size="small" type="text" style={{ fontSize: 12, color: 'var(--primary)' }}>今天</Button>
           </div>
-        ))}
-        {cells.map((day, idx) => {
-          if (day === null) {
-            return <div key={`empty-${idx}`} style={{ minHeight: 80, padding: 4, background: '#fafafa' }} />;
-          }
-          const dateStr = getDateStr(day);
-          const entries = calMap.get(dateStr) || [];
-          const isToday = dateStr === '2026-07-05';
-          return (
-            <div
-              key={`day-${day}`}
-              style={{
-                minHeight: 80,
-                padding: 4,
-                border: '1px solid #f0f0f0',
-                background: isToday ? '#e6f7ff' : undefined,
-              }}
-            >
-              <div style={{ fontWeight: isToday ? 'bold' : undefined, color: isToday ? '#1890ff' : undefined }}>
-                {day}
+          <div style={{ fontSize: 11.5, color: 'var(--tx2)' }}>
+            {demoCalendarEntries.filter((e) => e.status === 'completed').length}道完成 · {demoCalendarEntries.filter((e) => e.status === 'planned').length}道计划中
+          </div>
+        </div>
+
+        {/* 月视图 */}
+        <div style={{
+          borderRadius: 14, background: 'var(--panel)',
+          border: '1px solid var(--line)', overflow: 'hidden',
+        }}>
+          {/* 表头 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+            {weekDays.map((w) => (
+              <div key={w} style={{
+                textAlign: 'center', fontWeight: 600, padding: '6px 0',
+                fontSize: 11.5, color: 'var(--tx2)',
+                borderBottom: '1px solid var(--line2)',
+              }}>
+                {w}
               </div>
-              {entries.map((entry) => {
-                const recipe = recipeMap.get(entry.recipe_id);
+            ))}
+          </div>
+          {/* 格子 */}
+          {[0, 1, 2, 3, 4].map((weekIdx) => (
+            <div key={weekIdx} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+              {[0, 1, 2, 3, 4, 5, 6].map((dow) => {
+                const cellIdx = weekIdx * 7 + dow;
+                const day = cells[cellIdx];
+                if (day === null) {
+                  return (
+                    <div key={`empty-${weekIdx}-${dow}`} style={{
+                      minHeight: 80, padding: 4,
+                      background: 'var(--bg)', borderBottom: '1px solid var(--line2)',
+                      borderRight: '1px solid var(--line2)',
+                    }} onMouseEnter={(e) => {
+                      const t = e.currentTarget;
+                      if (t.style.background === 'var(--bg)') t.style.background = 'var(--hover)';
+                    }} onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'var(--bg)';
+                    }} />
+                  );
+                }
+                const dateStr = getDateStr(day);
+                const entries = calMap.get(dateStr) || [];
+                const isToday = dateStr === todayStr;
+                const isSelected = selectedDay === day;
                 return (
-                  <div key={entry.id} style={{ marginTop: 2 }}>
-                    <Tag
-                      color={entry.status === 'completed' ? 'green' : 'blue'}
-                      style={{ fontSize: 11, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                    >
-                      {entry.status === 'completed' && <CheckCircleOutlined />}
-                      {entry.status === 'planned' && <ClockCircleOutlined />}
-                      {' '}{recipe?.name || '未知'}
-                    </Tag>
+                  <div
+                    key={`day-${day}`}
+                    onClick={() => setSelectedDay(day)}
+                    style={{
+                      minHeight: 80, padding: 4, cursor: 'pointer',
+                      borderBottom: '1px solid var(--line2)',
+                      borderRight: '1px solid var(--line2)',
+                      background: isToday ? 'var(--primary-soft)' : isSelected ? 'var(--hover)' : 'var(--panel)',
+                      outline: (isToday || isSelected) ? '1.5px solid var(--primary)' : undefined,
+                      outlineOffset: -1,
+                    }}
+                    onMouseEnter={(e) => {
+                      const t = e.currentTarget;
+                      if (!isToday && !isSelected) t.style.background = 'var(--hover)';
+                    }}
+                    onMouseLeave={(e) => {
+                      const t = e.currentTarget;
+                      if (!isToday && !isSelected) t.style.background = 'var(--panel)';
+                    }}
+                  >
+                    <div style={{
+                      fontSize: 11, fontWeight: isToday ? 700 : 400,
+                      color: isToday ? 'var(--primary)' : 'var(--tx)',
+                      marginBottom: 2,
+                    }}>{day}</div>
+                    {entries.slice(0, 2).map((entry) => {
+                      const recipe = recipeMap.get(entry.recipe_id);
+                      return (
+                        <div
+                          key={entry.id}
+                          style={{
+                            fontSize: 10, borderRadius: 4, padding: '1px 4px', marginBottom: 1,
+                            background: entry.status === 'completed' ? 'var(--success-bg)' : 'transparent',
+                            border: entry.status === 'planned' ? '1px dashed var(--line)' : 'none',
+                            color: entry.status === 'completed' ? 'var(--success)' : 'var(--tx2)',
+                            overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {entry.status === 'completed' ? '✓' : '◌'} {recipe?.name || '未知'}
+                        </div>
+                      );
+                    })}
+                    {entries.length > 2 && (
+                      <div style={{ fontSize: 9, color: 'var(--tx2)' }}>+{entries.length - 2}</div>
+                    )}
                   </div>
                 );
               })}
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
 
-      {/* Legend */}
-      <div style={{ marginTop: 16 }}>
-        <Space>
-          <Tag color="green"><CheckCircleOutlined /> 已完成</Tag>
-          <Tag color="blue"><ClockCircleOutlined /> 计划中</Tag>
-          <Tag style={{ background: '#e6f7ff', borderColor: '#91d5ff' }}>今天</Tag>
-        </Space>
+      {/* 右侧详情卡 */}
+      <div style={{
+        width: 270, flexShrink: 0, borderRadius: 14,
+        background: 'var(--panel)', border: '1px solid var(--line)',
+        padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+        alignSelf: 'flex-start',
+      }}>
+        {selectedDay ? (
+          <>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)' }}>
+              {year}年{month + 1}月{selectedDay}日
+            </div>
+            {(() => {
+              const dateStr = getDateStr(selectedDay);
+              const entries = calMap.get(dateStr) || [];
+              if (entries.length === 0) {
+                return (
+                  <div style={{ fontSize: 12, color: 'var(--tx2)', textAlign: 'center', padding: '12px 0' }}>
+                    这天没有安排
+                  </div>
+                );
+              }
+              return entries.map((entry) => {
+                const recipe = recipeMap.get(entry.recipe_id);
+                return (
+                  <div key={entry.id} style={{
+                    borderRadius: 10, padding: 10,
+                    background: entry.status === 'completed' ? 'var(--success-bg)' : 'var(--bg)',
+                    border: entry.status === 'planned' ? '1px dashed var(--line)' : 'none',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>
+                        {recipe?.name || '未知'}
+                      </span>
+                      <span style={{
+                        fontSize: 10.5, borderRadius: 7, padding: '1px 7px',
+                        background: entry.status === 'completed' ? 'var(--success-bg)' : 'transparent',
+                        color: entry.status === 'completed' ? 'var(--success)' : 'var(--tx2)',
+                        border: entry.status === 'planned' ? '1px solid var(--line)' : 'none',
+                      }}>
+                        {entry.status === 'completed' ? '已完成' : '计划中'}
+                      </span>
+                    </div>
+                    {entry.status === 'planned' && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Tooltip title={TEXT.common.demoMode}>
+                          <Button size="small" type="primary" disabled onClick={showDemoWarning} style={{ flex: 1, fontSize: 11 }}>
+                            我做完了
+                          </Button>
+                        </Tooltip>
+                        <Tooltip title={TEXT.common.demoMode}>
+                          <Button size="small" disabled onClick={showDemoWarning} style={{ fontSize: 11 }}>
+                            取消
+                          </Button>
+                        </Tooltip>
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+            <Tooltip title={TEXT.common.demoMode}>
+              <Button type="dashed" block disabled onClick={showDemoWarning} style={{ fontSize: 12 }}>＋ 给这天加一道</Button>
+            </Tooltip>
+          </>
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--tx2)', textAlign: 'center', padding: '24px 0' }}>
+            点击日期查看详情
+          </div>
+        )}
       </div>
     </div>
   );
@@ -644,27 +1103,9 @@ function CalendarSection() {
 // ─── Utensils Section ─────────────────────────────────────────────────────────
 
 function UtensilsSection() {
-  const columns = [
-    { title: TEXT.utensils.name, dataIndex: 'name', key: 'name' },
-    { title: TEXT.utensils.note, dataIndex: 'note', key: 'note', render: (v: string | null) => v || '-' },
-    {
-      title: '操作', key: 'actions', width: 200,
-      render: () => (
-        <Space>
-          <Tooltip title={TEXT.common.demoMode}>
-            <Button icon={<EditOutlined />} disabled size="small">{TEXT.common.edit}</Button>
-          </Tooltip>
-          <Tooltip title={TEXT.common.demoMode}>
-            <Button icon={<DeleteOutlined />} danger disabled size="small">{TEXT.common.delete}</Button>
-          </Tooltip>
-        </Space>
-      ),
-    },
-  ];
-
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>{TEXT.utensils.title}</Title>
         <Tooltip title={TEXT.common.demoMode}>
           <Button type="primary" icon={<PlusOutlined />} disabled onClick={showDemoWarning}>
@@ -672,19 +1113,48 @@ function UtensilsSection() {
           </Button>
         </Tooltip>
       </div>
-      <Table dataSource={demoUtensils} columns={columns} rowKey="id" pagination={false} size="middle" />
+      <div style={{ maxWidth: 640 }}>
+        {demoUtensils.map((utensil) => (
+          <div
+            key={utensil.id}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 14px', borderRadius: 14,
+              background: 'var(--panel)', border: '1px solid var(--line)',
+              marginBottom: 8,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--tx)' }}>{utensil.name}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--tx2)', marginTop: 2 }}>{utensil.note || '—'}</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{
+                fontSize: 10.5, borderRadius: 7, padding: '1px 7px',
+                background: 'var(--primary-soft)', color: 'var(--primary)',
+              }}>
+                {0}道菜在用
+              </span>
+              <Tooltip title={TEXT.common.demoMode}>
+                <Button type="text" size="small" icon={<EditOutlined />} disabled onClick={showDemoWarning}
+                  style={{ color: 'var(--tx2)' }} />
+              </Tooltip>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ─── Main Page (wrapped in Suspense for useSearchParams) ──────────────────────
+// ─── Main Page (wrapped in Suspense for useSearchParams) ─────────────────────
 
 function DemoPageContent() {
   const searchParams = useSearchParams();
   const defaultTab = searchParams.get('tab') || 'recommend';
 
   const tabItems = [
-    { key: 'recommend', label: TEXT.nav.recommend, children: <RecommendSection /> },
+    { key: 'recommend', label: '智能推荐', children: <RecommendSection /> },
     { key: 'inventory', label: TEXT.nav.inventory, children: <InventorySection /> },
     { key: 'utensils', label: TEXT.nav.utensils, children: <UtensilsSection /> },
     { key: 'recipes', label: TEXT.nav.recipes, children: <RecipesSection /> },
@@ -701,7 +1171,33 @@ function DemoPageContent() {
         icon={<InfoCircleOutlined />}
         style={{ marginBottom: 24 }}
       />
-      <Tabs defaultActiveKey={defaultTab} items={tabItems} size="large" />
+      <div style={{ display: 'flex', gap: 2 }}>
+        {tabItems.map((item) => {
+          const isActive = defaultTab === item.key;
+          return (
+            <div
+              key={item.key}
+              onClick={() => {
+                const url = new URL(window.location.href);
+                url.searchParams.set('tab', item.key);
+                window.location.href = url.toString();
+              }}
+              style={{
+                padding: '8px 18px', borderRadius: '99px 99px 0 0',
+                fontSize: 13, fontWeight: isActive ? 600 : 400,
+                color: isActive ? 'var(--primary)' : 'var(--tx2)',
+                background: isActive ? 'var(--panel)' : 'transparent',
+                cursor: 'pointer', borderBottom: isActive ? '2px solid var(--primary)' : '2px solid transparent',
+              }}
+            >
+              {item.label}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 16 }}>
+        {tabItems.find((t) => t.key === defaultTab)?.children}
+      </div>
     </div>
   );
 }

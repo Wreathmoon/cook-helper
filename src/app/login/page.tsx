@@ -59,6 +59,35 @@ export default function LoginPage() {
             boxShadow: 'var(--shadow-card)',
           }}
         >
+          <div
+            style={{
+              display: 'flex', gap: 4, padding: 4, marginBottom: 20,
+              borderRadius: 'var(--radius-segmented)', background: 'var(--hover)',
+            }}
+          >
+            <button
+              type="button"
+              style={{
+                flex: 1, padding: '8px 0', borderRadius: 7, border: 'none',
+                background: 'var(--panel)', color: 'var(--primary)',
+                fontWeight: 700, fontSize: 13, cursor: 'default',
+                boxShadow: 'var(--shadow-card)',
+              }}
+            >
+              {TEXT.auth.login}
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/register')}
+              style={{
+                flex: 1, padding: '8px 0', borderRadius: 7, border: 'none',
+                background: 'transparent', color: 'var(--tx2)',
+                fontWeight: 600, fontSize: 13, cursor: 'pointer',
+              }}
+            >
+              {TEXT.auth.register}
+            </button>
+          </div>
           <Form layout="vertical" onFinish={handleLogin}>
             <Form.Item name="email" label={TEXT.auth.email} rules={[{ required: true, message: TEXT.auth.emailRequired }, { type: 'email', message: TEXT.auth.emailInvalid }]}>
               <Input placeholder={TEXT.auth.email} style={{ borderRadius: 10 }} />

@@ -1,8 +1,9 @@
 'use client';
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useThemeStore } from '@/store/theme-store';
+import { signOut } from '@/app/actions/auth';
 
 type IconProps = { size?: number };
 
@@ -86,11 +87,18 @@ export function AppLayout({
   user?: AppLayoutUser | null;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
   const toggleTheme = useThemeStore((state) => state.toggleTheme);
 
   const displayName = user?.name || user?.email || '游客';
+  const displayEmail = user?.email && user?.email !== displayName ? user.email : null;
   const initial = displayName.charAt(0).toUpperCase();
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push('/login');
+  };
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg)' }}>
@@ -197,7 +205,7 @@ export function AppLayout({
             >
               {initial}
             </div>
-            <div style={{ overflow: 'hidden' }}>
+            <div style={{ overflow: 'hidden', flex: 1 }}>
               <div
                 style={{
                   fontSize: 12.5,
@@ -210,7 +218,7 @@ export function AppLayout({
               >
                 {displayName}
               </div>
-              {user?.email && user?.name && (
+              {displayEmail && (
                 <div
                   style={{
                     fontSize: 11,
@@ -220,31 +228,50 @@ export function AppLayout({
                     textOverflow: 'ellipsis',
                   }}
                 >
-                  {user.email}
+                  {displayEmail}
                 </div>
               )}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={toggleTheme}
-            style={{
-              height: 26,
-              borderRadius: 8,
-              border: '1px solid var(--line)',
-              background: 'var(--panel)',
-              color: 'var(--tx)',
-              fontSize: 12,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-            }}
-          >
-            <span aria-hidden>◐</span>
-            {isDarkMode ? '深色' : '浅色'}
-          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              style={{
+                flex: 1,
+                height: 26,
+                borderRadius: 8,
+                border: '1px solid var(--line)',
+                background: 'var(--panel)',
+                color: 'var(--tx)',
+                fontSize: 12,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+              }}
+            >
+              <span aria-hidden>◐</span>
+              {isDarkMode ? '深色' : '浅色'}
+            </button>
+            {user && (
+              <button
+                type="button"
+                onClick={handleSignOut}
+                title="退出登录"
+                style={{
+                  width: 26, height: 26, borderRadius: 8, flexShrink: 0,
+                  border: '1px solid var(--line)',
+                  background: 'var(--panel)', color: 'var(--tx2)',
+                  fontSize: 12, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                ↩
+              </button>
+            )}
+          </div>
         </div>
       </aside>
 

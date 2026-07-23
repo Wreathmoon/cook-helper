@@ -123,6 +123,32 @@ a {
   box-shadow: var(--shadow-card-hover);
 }
 
+.cal-cell {
+  transition: background-color 0.12s;
+}
+
+.cal-cell:hover {
+  background-color: var(--hover);
+}
+
+.cal-cell-outside {
+  color: var(--tx2);
+}
+
+.cal-cell-outside:hover {
+  background-color: color-mix(in srgb, var(--hover) 55%, transparent);
+}
+
+.chip-pick {
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.chip-pick:hover {
+  background-color: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 @keyframes skeleton-shimmer {
   0% {
     background-position: -200% 0;
@@ -138,6 +164,15 @@ a {
   animation: skeleton-shimmer 1.4s ease-in-out infinite;
 }
 
+.otp-narrow input {
+  width: 22px !important;
+}
+
+.otp-narrow input:focus {
+  border-color: var(--primary) !important;
+  box-shadow: none !important;
+}
+
 @keyframes modal-overlay-fade {
   from {
     opacity: 0;
@@ -145,4 +180,20 @@ a {
   to {
     opacity: 1;
   }
+}
+
+/* OTP narrow cells: 22px per cell for 8-digit code */
+.otp-narrow .ant-otp-input {
+  width: 22px !important;
+  height: 34px !important;
+  margin: 0 3px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.otp-narrow .ant-otp-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+.otp-narrow .ant-otp {
+  gap: 4px;
 }

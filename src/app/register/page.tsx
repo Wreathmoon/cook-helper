@@ -83,6 +83,13 @@ export default function RegisterPage() {
           CH
         </div>
 
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--tx)' }}>
+            家里有什么 <span style={{ color: 'var(--primary)' }}>→</span> 能做什么 <span style={{ color: 'var(--primary)' }}>→</span> 该买什么
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--tx2)', marginTop: 6 }}>家庭厨房智能助手</div>
+        </div>
+
         <div
           style={{
             width: 360,
@@ -124,7 +131,7 @@ export default function RegisterPage() {
                 验证码已发送到 {email}
               </Text>
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
-                <Input.OTP length={8} value={otp} onChange={setOtp} size="large" />
+                <Input.OTP length={8} value={otp} onChange={setOtp} size="large" className="otp-narrow" />
               </div>
               <Button type="primary" onClick={handleVerify} block loading={loading} disabled={otp.length !== 8}
                 style={{ borderRadius: 10, height: 40, background: 'var(--primary-btn)', borderColor: 'var(--primary-btn)' }}

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { Button, Segmented, Modal, Form, Input, Select, message } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Button, Segmented, Modal, Form, Input, Select, DatePicker, message } from 'antd';
+import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { TEXT } from '@/lib/constants/text';
 import { getListInventory, addInventoryItemAction, updateInventoryItemAction, deleteInventoryItemAction } from '@/app/actions/inventory';
 import type { InventoryItem, InventoryCategory, StockLevel } from '@/types';
@@ -42,15 +43,13 @@ function daysSince(dateStr: string | null): number {
 
 function getHint(item: InventoryItem): { text: string; color: string } {
   const days = daysSince(item.last_restocked_at);
-  if (item.stock_level === 'out') return { text: '已提示到购物清单', color: 'var(--warn)' };
+  if (item.stock_level === 'out') return { text: '已提示购物清单', color: 'var(--warn)' };
 
   const threshold = item.category === 'vegetable' ? 3 : item.category === 'meat' ? 5 : 7;
   if (days >= threshold && days > 0) return { text: `${days}天前入库 · 建议先吃`, color: 'var(--notice)' };
   if (days > 0) return { text: `${days}天前入库`, color: 'var(--tx2)' };
   return { text: '刚入库', color: 'var(--tx2)' };
 }
-
-const categoryCount: Record<string, number> = {};
 
 export default function InventoryPage() {
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -64,8 +63,7 @@ export default function InventoryPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const cat = activeCat === 'all' ? undefined : activeCat;
-      const res = await getListInventory(cat);
+      const res = await getListInventory();
       if (res.data) setItems(res.data);
       else if (res.error) message.error(res.error);
     } catch {
@@ -73,9 +71,28 @@ export default function InventoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeCat]);
+  }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const categoryStats = useMemo(() => {
+    const stats: Record<string, { count: number; alert: boolean }> = { all: { count: 0, alert: false } };
+    CATEGORIES.forEach((c) => { if (c.key !== 'all') stats[c.key] = { count: 0, alert: false }; });
+    items.forEach((item) => {
+      stats.all.count += 1;
+      stats[item.category].count += 1;
+      if (item.stock_level !== 'enough') {
+        stats.all.alert = true;
+        stats[item.category].alert = true;
+      }
+    });
+    return stats;
+  }, [items]);
+
+  const visibleItems = useMemo(
+    () => (activeCat === 'all' ? items : items.filter((i) => i.category === activeCat)),
+    [items, activeCat]
+  );
 
   const totalItems = items.length;
 
@@ -88,7 +105,10 @@ export default function InventoryPage() {
 
   const openEdit = (item: InventoryItem) => {
     setEditing(item);
-    form.setFieldsValue(item);
+    form.setFieldsValue({
+      ...item,
+      last_restocked_at: item.last_restocked_at ? dayjs(item.last_restocked_at) : null,
+    });
     setModalOpen(true);
   };
 
@@ -96,9 +116,13 @@ export default function InventoryPage() {
     try {
       const values = await form.validateFields();
       setSubmitting(true);
+      const payload = {
+        ...values,
+        last_restocked_at: values.last_restocked_at ? values.last_restocked_at.toISOString() : null,
+      };
       const res = editing
-        ? await updateInventoryItemAction(editing.id, values)
-        : await addInventoryItemAction(values);
+        ? await updateInventoryItemAction(editing.id, payload)
+        : await addInventoryItemAction(payload);
       if (res.error) message.error(res.error);
       else { message.success(TEXT.common.success); setModalOpen(false); fetchData(); }
     } catch { /* validation */ } finally { setSubmitting(false); }
@@ -127,6 +151,7 @@ export default function InventoryPage() {
         <div style={{ width: 172, flexShrink: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
           {CATEGORIES.map((cat) => {
             const active = activeCat === cat.key;
+            const stat = categoryStats[cat.key] ?? { count: 0, alert: false };
             return (
               <div
                 key={cat.key}
@@ -141,6 +166,10 @@ export default function InventoryPage() {
                 }}
               >
                 <span>{cat.label}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {stat.alert && <StatusDot status="bad" />}
+                  <span style={{ fontSize: 11.5, color: active ? 'var(--primary)' : 'var(--tx2)' }}>{stat.count}</span>
+                </span>
               </div>
             );
           })}
@@ -148,7 +177,7 @@ export default function InventoryPage() {
 
         {/* 右侧表格 */}
         <div style={{ flex: 1, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
-          {items.length === 0 && !loading ? (
+          {visibleItems.length === 0 && !loading ? (
             <div style={{ textAlign: 'center', padding: 60, fontSize: 13, color: 'var(--tx2)' }}>暂无食材</div>
           ) : (
             <div style={{ width: '100%' }}>
@@ -161,7 +190,7 @@ export default function InventoryPage() {
                 <div style={{ width: 60, padding: '10px 14px' }}>操作</div>
               </div>
               {/* 行 */}
-              {items.map((item) => {
+              {visibleItems.map((item) => {
                 const hint = getHint(item);
                 return (
                   <div key={item.id} style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--line2)', fontSize: 12.5 }}>
@@ -223,6 +252,9 @@ export default function InventoryPage() {
           </Form.Item>
           <Form.Item name="stock_level" label="库存档位">
             <Select options={STOCK_LEVELS} />
+          </Form.Item>
+          <Form.Item name="last_restocked_at" label="入库时间">
+            <DatePicker style={{ width: '100%' }} />
           </Form.Item>
           {editing && (
             <Form.Item>
