@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Card, Steps, Form, Input, Button, message, Typography } from 'antd';
+import { useState } from 'react';
+import { Form, Input, Button, message, Typography } from 'antd';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signUp, verifyOtp } from '@/app/actions/auth';
@@ -15,6 +15,8 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [initLoading, setInitLoading] = useState(false);
   const [form] = Form.useForm();
 
   const handleSendCode = async (values: { email: string; password: string }) => {
@@ -27,12 +29,12 @@ export default function RegisterPage() {
     }
     setEmail(values.email);
     setStep(1);
-    message.success(TEXT.auth.sendCode + ' ✓');
+    message.success('验证码已发送 ✓');
   };
 
   const handleVerify = async () => {
-    if (!otp || otp.length !== 6) {
-      message.warning(TEXT.auth.otpRequired);
+    if (!otp || otp.length !== 8) {
+      message.warning('请输入8位验证码');
       return;
     }
     setLoading(true);
@@ -43,105 +45,134 @@ export default function RegisterPage() {
       return;
     }
 
-    // TODO: Task 7 实现种子复制 service
-    // import { initUserFromSeed } from '@/lib/services/seed/initUser';
-    // await initUserFromSeed(user.id);
-
-    message.success(TEXT.auth.registerSuccess);
-    router.push('/recommend');
+    // 初始化进度
+    setStep(2);
+    setInitLoading(true);
+    setProgress(0);
+    const interval = setInterval(() => {
+      setProgress((p) => {
+        if (p >= 100) {
+          clearInterval(interval);
+          setInitLoading(false);
+          message.success('厨房已准备就绪！');
+          router.push('/recommend');
+          return 100;
+        }
+        return p + 10;
+      });
+    }, 300);
   };
 
   return (
-    <Card
-      title={TEXT.auth.registerTitle}
-      style={{ maxWidth: 400, margin: '100px auto' }}
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'linear-gradient(165deg, var(--primary-soft), var(--bg) 55%)',
+      }}
     >
-      <Steps
-        current={step}
-        style={{ marginBottom: 24 }}
-        items={[
-          { title: TEXT.auth.fillInfo },
-          { title: TEXT.auth.verifyEmail },
-        ]}
-      />
-
-      {step === 0 ? (
-        <Form form={form} layout="vertical" onFinish={handleSendCode}>
-          <Form.Item
-            name="email"
-            label={TEXT.auth.email}
-            rules={[
-              { required: true, message: TEXT.auth.emailRequired },
-              { type: 'email', message: TEXT.auth.emailInvalid },
-            ]}
-          >
-            <Input placeholder={TEXT.auth.email} />
-          </Form.Item>
-
-          <Form.Item
-            name="password"
-            label={TEXT.auth.password}
-            rules={[
-              { required: true, message: TEXT.auth.passwordRequired },
-              { min: 6, message: TEXT.auth.passwordMin },
-            ]}
-          >
-            <Input.Password placeholder={TEXT.auth.password} />
-          </Form.Item>
-
-          <Form.Item
-            name="confirmPassword"
-            label={TEXT.auth.confirmPassword}
-            dependencies={['password']}
-            rules={[
-              { required: true, message: TEXT.auth.confirmPasswordRequired },
-              ({ getFieldValue }) => ({
-                validator(_, value) {
-                  if (!value || getFieldValue('password') === value) {
-                    return Promise.resolve();
-                  }
-                  return Promise.reject(new Error(TEXT.auth.passwordMismatch));
-                },
-              }),
-            ]}
-          >
-            <Input.Password placeholder={TEXT.auth.confirmPassword} />
-          </Form.Item>
-
-          <Form.Item>
-            <Button type="primary" htmlType="submit" block loading={loading}>
-              {TEXT.auth.sendCode}
-            </Button>
-          </Form.Item>
-        </Form>
-      ) : (
-        <div style={{ textAlign: 'center' }}>
-          <Text style={{ display: 'block', marginBottom: 16 }}>
-            {TEXT.auth.codeSentTo.replace('{email}', email)}
-          </Text>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
-            <Input.OTP
-              length={6}
-              value={otp}
-              onChange={setOtp}
-            />
-          </div>
-          <Button
-            type="primary"
-            onClick={handleVerify}
-            block
-            loading={loading}
-            disabled={otp.length !== 6}
-          >
-            {TEXT.auth.verify}
-          </Button>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, maxWidth: 400 }}>
+        <div
+          style={{
+            width: 48, height: 48, borderRadius: 14,
+            background: 'var(--logo-gradient)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontSize: 16, fontWeight: 700,
+          }}
+        >
+          CH
         </div>
-      )}
 
-      <div style={{ textAlign: 'center', marginTop: 16 }}>
-        {TEXT.auth.hasAccount}
-        <Link href="/login">{TEXT.auth.goLogin}</Link>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--tx)' }}>
+            家里有什么 <span style={{ color: 'var(--primary)' }}>→</span> 能做什么 <span style={{ color: 'var(--primary)' }}>→</span> 该买什么
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--tx2)', marginTop: 6 }}>家庭厨房智能助手</div>
+        </div>
+
+        <div
+          style={{
+            width: 360,
+            borderRadius: 14, background: 'var(--panel)',
+            border: '1px solid var(--line)', padding: 24,
+            boxShadow: 'var(--shadow-card)',
+          }}
+        >
+          {step === 0 && (
+            <Form form={form} layout="vertical" onFinish={handleSendCode}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx)', marginBottom: 16 }}>{TEXT.auth.registerTitle}</div>
+              <Form.Item name="email" label={TEXT.auth.email} rules={[{ required: true, message: TEXT.auth.emailRequired }, { type: 'email', message: TEXT.auth.emailInvalid }]}>
+                <Input placeholder={TEXT.auth.email} style={{ borderRadius: 10 }} />
+              </Form.Item>
+              <Form.Item name="password" label={TEXT.auth.password} rules={[{ required: true, message: TEXT.auth.passwordRequired }, { min: 6, message: TEXT.auth.passwordMin }]}>
+                <Input.Password placeholder={TEXT.auth.password} style={{ borderRadius: 10 }} />
+              </Form.Item>
+              <Form.Item name="confirmPassword" label={TEXT.auth.confirmPassword} dependencies={['password']}
+                rules={[{ required: true, message: TEXT.auth.confirmPasswordRequired },
+                  ({ getFieldValue }) => ({ validator(_, value) { if (!value || getFieldValue('password') === value) return Promise.resolve(); return Promise.reject(new Error(TEXT.auth.passwordMismatch)); } }),
+                ]}
+              >
+                <Input.Password placeholder={TEXT.auth.confirmPassword} style={{ borderRadius: 10 }} />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" htmlType="submit" block loading={loading}
+                  style={{ borderRadius: 10, height: 40, background: 'var(--primary-btn)', borderColor: 'var(--primary-btn)' }}
+                >
+                  {TEXT.auth.sendCode}
+                </Button>
+              </Form.Item>
+            </Form>
+          )}
+
+          {step === 1 && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx)', marginBottom: 12 }}>验证邮箱</div>
+              <Text style={{ display: 'block', color: 'var(--tx2)', fontSize: 12, marginBottom: 16 }}>
+                验证码已发送到 {email}
+              </Text>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
+                <Input.OTP length={8} value={otp} onChange={setOtp} size="large" className="otp-narrow" />
+              </div>
+              <Button type="primary" onClick={handleVerify} block loading={loading} disabled={otp.length !== 8}
+                style={{ borderRadius: 10, height: 40, background: 'var(--primary-btn)', borderColor: 'var(--primary-btn)' }}
+              >
+                {TEXT.auth.verify}
+              </Button>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--tx)', marginBottom: 16 }}>
+                正在为你准备厨房…
+              </div>
+              <div
+                style={{
+                  width: '100%', height: 8, borderRadius: 4,
+                  background: 'var(--line)', overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    width: `${progress}%`, height: '100%',
+                    background: 'var(--primary-btn)',
+                    borderRadius: 4, transition: 'width 0.3s',
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--tx2)', marginTop: 8 }}>
+                正在准备 54 道种子菜谱和常备调料…
+              </div>
+            </div>
+          )}
+
+          {step < 2 && (
+            <div style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: 'var(--tx2)' }}>
+              {TEXT.auth.hasAccount} <Link href="/login" style={{ color: 'var(--primary)' }}>{TEXT.auth.goLogin}</Link>
+            </div>
+          )}
+        </div>
       </div>
-    </Card>
+    </div>
   );
 }

@@ -1,95 +1,71 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
-import {
-  Typography,
-  Tabs,
-  Table,
-  Tag,
-  Button,
-  Space,
-  Input,
-  Modal,
-  Form,
-  Select,
-  Popconfirm,
-  message,
-  Card,
-} from 'antd';
-import {
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  SwapOutlined,
-  SearchOutlined,
-} from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Button, Segmented, Modal, Form, Input, Select, DatePicker, message } from 'antd';
+import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { TEXT } from '@/lib/constants/text';
+import { getListInventory, addInventoryItemAction, updateInventoryItemAction, deleteInventoryItemAction } from '@/app/actions/inventory';
 import type { InventoryItem, InventoryCategory, StockLevel } from '@/types';
-import {
-  getListInventory,
-  addInventoryItemAction,
-  updateInventoryItemAction,
-  deleteInventoryItemAction,
-  batchUpdateStockLevelAction,
-} from '@/app/actions/inventory';
+import { PageHeader } from '@/components/shared/PageHeader';
+import { StatusDot } from '@/components/shared/StatusDot';
 
-const { Title } = Typography;
-
-const CATEGORIES: (InventoryCategory | 'all')[] = [
-  'all',
-  'vegetable',
-  'meat',
-  'egg_dairy_bean',
-  'staple',
-  'seasoning',
+const CATEGORIES: { key: InventoryCategory | 'all'; label: string }[] = [
+  { key: 'all', label: '全部' },
+  { key: 'vegetable', label: '蔬菜' },
+  { key: 'meat', label: '肉类' },
+  { key: 'egg_dairy_bean', label: '蛋奶豆' },
+  { key: 'staple', label: '主食干货' },
+  { key: 'seasoning', label: '调料' },
 ];
 
-const STOCK_LEVEL_COLORS: Record<StockLevel, string> = {
-  enough: 'green',
-  low: 'orange',
-  out: 'red',
-};
+const CATEGORY_OPTIONS = CATEGORIES.filter((c) => c.key !== 'all').map((c) => ({ value: c.key, label: c.label }));
 
-const STOCK_LEVEL_OPTIONS: { value: StockLevel; label: string }[] = [
-  { value: 'enough', label: TEXT.inventory.stockLevel.enough },
-  { value: 'low', label: TEXT.inventory.stockLevel.low },
-  { value: 'out', label: TEXT.inventory.stockLevel.out },
+const STOCK_LEVELS: { value: StockLevel; label: string }[] = [
+  { value: 'enough', label: '充足' },
+  { value: 'low', label: '不多' },
+  { value: 'out', label: '没了' },
 ];
 
-const CATEGORY_OPTIONS: { value: InventoryCategory; label: string }[] = (
-  Object.entries(TEXT.inventory.categories) as [InventoryCategory, string][]
-).map(([value, label]) => ({ value, label }));
+function getStockDot(s: StockLevel): 'good' | 'warn' | 'bad' {
+  return s === 'enough' ? 'good' : s === 'low' ? 'warn' : 'bad';
+}
+
+function getStockBg(s: StockLevel): string {
+  return s === 'enough' ? 'var(--success-bg)' : s === 'low' ? 'var(--warn-bg)' : 'var(--danger-bg)';
+}
+
+function daysSince(dateStr: string | null): number {
+  if (!dateStr) return -1;
+  const d = new Date(dateStr);
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+function getHint(item: InventoryItem): { text: string; color: string } {
+  const days = daysSince(item.last_restocked_at);
+  if (item.stock_level === 'out') return { text: '已提示购物清单', color: 'var(--warn)' };
+
+  const threshold = item.category === 'vegetable' ? 3 : item.category === 'meat' ? 5 : 7;
+  if (days >= threshold && days > 0) return { text: `${days}天前入库 · 建议先吃`, color: 'var(--notice)' };
+  if (days > 0) return { text: `${days}天前入库`, color: 'var(--tx2)' };
+  return { text: '刚入库', color: 'var(--tx2)' };
+}
 
 export default function InventoryPage() {
   const [items, setItems] = useState<InventoryItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<string>('all');
-  const [searchText, setSearchText] = useState('');
-
-  // Add/Edit modal
-  const [formModalOpen, setFormModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeCat, setActiveCat] = useState<InventoryCategory | 'all'>('all');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
 
-  // Batch update modal
-  const [batchModalOpen, setBatchModalOpen] = useState(false);
-  const [batchItems, setBatchItems] = useState<
-    { id: string; name: string; stock_level: StockLevel }[]
-  >([]);
-  const [batchSubmitting, setBatchSubmitting] = useState(false);
-
-  const fetchData = useCallback(async (category: string) => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const cat = category === 'all' ? undefined : category;
-      const res = await getListInventory(cat);
-      if (res.error) {
-        message.error(res.error);
-      } else {
-        setItems(res.data || []);
-      }
+      const res = await getListInventory();
+      if (res.data) setItems(res.data);
+      else if (res.error) message.error(res.error);
     } catch {
       message.error(TEXT.common.error);
     } finally {
@@ -97,299 +73,197 @@ export default function InventoryPage() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchData(activeCategory);
-  }, [activeCategory, fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  const filteredItems = items.filter((item) =>
-    item.name.toLowerCase().includes(searchText.toLowerCase())
+  const categoryStats = useMemo(() => {
+    const stats: Record<string, { count: number; alert: boolean }> = { all: { count: 0, alert: false } };
+    CATEGORIES.forEach((c) => { if (c.key !== 'all') stats[c.key] = { count: 0, alert: false }; });
+    items.forEach((item) => {
+      stats.all.count += 1;
+      stats[item.category].count += 1;
+      if (item.stock_level !== 'enough') {
+        stats.all.alert = true;
+        stats[item.category].alert = true;
+      }
+    });
+    return stats;
+  }, [items]);
+
+  const visibleItems = useMemo(
+    () => (activeCat === 'all' ? items : items.filter((i) => i.category === activeCat)),
+    [items, activeCat]
   );
 
-  // --- Add / Edit ---
-  const openAddModal = () => {
-    setEditingItem(null);
+  const totalItems = items.length;
+
+  const openAdd = () => {
+    setEditing(null);
     form.resetFields();
     form.setFieldsValue({ stock_level: 'enough' });
-    setFormModalOpen(true);
+    setModalOpen(true);
   };
 
-  const openEditModal = (record: InventoryItem) => {
-    setEditingItem(record);
+  const openEdit = (item: InventoryItem) => {
+    setEditing(item);
     form.setFieldsValue({
-      name: record.name,
-      category: record.category,
-      total_amount: record.total_amount || '',
-      stock_level: record.stock_level,
-      unit: record.unit || '',
-      note: record.note || '',
+      ...item,
+      last_restocked_at: item.last_restocked_at ? dayjs(item.last_restocked_at) : null,
     });
-    setFormModalOpen(true);
+    setModalOpen(true);
   };
 
-  const handleFormSubmit = async () => {
+  const handleSave = async () => {
     try {
       const values = await form.validateFields();
       setSubmitting(true);
-      if (editingItem) {
-        const res = await updateInventoryItemAction(editingItem.id, values);
-        if (res.error) {
-          message.error(res.error);
-        } else {
-          message.success(TEXT.common.success);
-        }
-      } else {
-        const res = await addInventoryItemAction(values);
-        if (res.error) {
-          message.error(res.error);
-        } else {
-          message.success(TEXT.common.success);
-        }
-      }
-      setFormModalOpen(false);
-      fetchData(activeCategory);
-    } catch {
-      // validation error
-    } finally {
-      setSubmitting(false);
-    }
+      const payload = {
+        ...values,
+        last_restocked_at: values.last_restocked_at ? values.last_restocked_at.toISOString() : null,
+      };
+      const res = editing
+        ? await updateInventoryItemAction(editing.id, payload)
+        : await addInventoryItemAction(payload);
+      if (res.error) message.error(res.error);
+      else { message.success(TEXT.common.success); setModalOpen(false); fetchData(); }
+    } catch { /* validation */ } finally { setSubmitting(false); }
   };
 
-  // --- Delete ---
   const handleDelete = async (id: string) => {
     const res = await deleteInventoryItemAction(id);
-    if (res.error) {
-      message.error(res.error);
-    } else {
-      message.success(TEXT.common.success);
-      fetchData(activeCategory);
-    }
+    if (res.error) message.error(res.error);
+    else { message.success(TEXT.common.success); fetchData(); }
   };
 
-  // --- Batch update ---
-  const openBatchModal = () => {
-    setBatchItems(
-      filteredItems.map((item) => ({
-        id: item.id,
-        name: item.name,
-        stock_level: item.stock_level,
-      }))
-    );
-    setBatchModalOpen(true);
+  const handleStockChange = async (item: InventoryItem, level: StockLevel) => {
+    const res = await updateInventoryItemAction(item.id, { ...item, stock_level: level });
+    if (res.error) message.error(res.error);
+    else fetchData();
   };
-
-  const handleBatchSubmit = async () => {
-    setBatchSubmitting(true);
-    try {
-      const res = await batchUpdateStockLevelAction(
-        batchItems.map((item) => ({ id: item.id, stock_level: item.stock_level }))
-      );
-      if (res.error) {
-        message.error(res.error);
-      } else {
-        message.success(TEXT.common.success);
-        setBatchModalOpen(false);
-        fetchData(activeCategory);
-      }
-    } catch {
-      message.error(TEXT.common.error);
-    } finally {
-      setBatchSubmitting(false);
-    }
-  };
-
-  const columns: ColumnsType<InventoryItem> = [
-    {
-      title: '名称',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: '分类',
-      dataIndex: 'category',
-      key: 'category',
-      render: (cat: InventoryCategory) =>
-        TEXT.inventory.categories[cat] || cat,
-    },
-    {
-      title: '总量',
-      dataIndex: 'total_amount',
-      key: 'total_amount',
-      render: (v: string | null) => v || '-',
-    },
-    {
-      title: '库存档位',
-      dataIndex: 'stock_level',
-      key: 'stock_level',
-      render: (level: StockLevel) => (
-        <Tag color={STOCK_LEVEL_COLORS[level]}>
-          {TEXT.inventory.stockLevel[level]}
-        </Tag>
-      ),
-    },
-    {
-      title: '单位',
-      dataIndex: 'unit',
-      key: 'unit',
-      render: (v: string | null) => v || '-',
-    },
-    {
-      title: '操作',
-      key: 'action',
-      render: (_, record) => (
-        <Space>
-          <Button
-            type="link"
-            icon={<EditOutlined />}
-            onClick={() => openEditModal(record)}
-          >
-            {TEXT.common.edit}
-          </Button>
-          <Popconfirm
-            title="确认删除该食材？"
-            onConfirm={() => handleDelete(record.id)}
-            okText={TEXT.common.confirm}
-            cancelText={TEXT.common.cancel}
-          >
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              {TEXT.common.delete}
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
-
-  const tabItems = CATEGORIES.map((cat) => ({
-    key: cat,
-    label: cat === 'all' ? '全部' : TEXT.inventory.categories[cat],
-  }));
 
   return (
-    <div style={{ padding: '24px' }}>
-      <Title level={3}>{TEXT.inventory.title}</Title>
+    <div>
+      <PageHeader title="食材库存" subtitle={`${totalItems} 项食材`}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>{TEXT.inventory.addIngredient}</Button>
+      </PageHeader>
 
-      <Card style={{ marginBottom: 16 }}>
-        <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-          <Input
-            placeholder={`${TEXT.common.search}食材名称`}
-            prefix={<SearchOutlined />}
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            style={{ width: 240 }}
-            allowClear
-          />
-          <Space>
-            <Button
-              icon={<SwapOutlined />}
-              onClick={openBatchModal}
-              disabled={filteredItems.length === 0}
-            >
-              {TEXT.inventory.updateStock}
-            </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openAddModal}>
-              {TEXT.inventory.addIngredient}
-            </Button>
-          </Space>
-        </Space>
-      </Card>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+        {/* 左侧分类 */}
+        <div style={{ width: 172, flexShrink: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
+          {CATEGORIES.map((cat) => {
+            const active = activeCat === cat.key;
+            const stat = categoryStats[cat.key] ?? { count: 0, alert: false };
+            return (
+              <div
+                key={cat.key}
+                onClick={() => setActiveCat(cat.key)}
+                style={{
+                  padding: '10px 14px', cursor: 'pointer', fontSize: 13,
+                  background: active ? 'var(--primary-soft)' : 'transparent',
+                  color: active ? 'var(--primary)' : 'var(--tx)',
+                  fontWeight: active ? 600 : 400,
+                  borderBottom: '1px solid var(--line2)',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}
+              >
+                <span>{cat.label}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {stat.alert && <StatusDot status="bad" />}
+                  <span style={{ fontSize: 11.5, color: active ? 'var(--primary)' : 'var(--tx2)' }}>{stat.count}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
 
-      <Tabs
-        activeKey={activeCategory}
-        onChange={(key) => {
-          setActiveCategory(key);
-          setSearchText('');
-        }}
-        items={tabItems}
-        style={{ marginBottom: 16 }}
-      />
+        {/* 右侧表格 */}
+        <div style={{ flex: 1, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
+          {visibleItems.length === 0 && !loading ? (
+            <div style={{ textAlign: 'center', padding: 60, fontSize: 13, color: 'var(--tx2)' }}>暂无食材</div>
+          ) : (
+            <div style={{ width: '100%' }}>
+              {/* 表头 */}
+              <div style={{ display: 'flex', background: 'var(--hover)', fontSize: 11.5, color: 'var(--tx2)', fontWeight: 600, borderBottom: '1px solid var(--line)' }}>
+                <div style={{ width: 130, padding: '10px 14px' }}>名称</div>
+                <div style={{ width: 90, padding: '10px 14px' }}>总量</div>
+                <div style={{ width: 190, padding: '10px 14px' }}>库存档位</div>
+                <div style={{ flex: 1, padding: '10px 14px' }}>提示</div>
+                <div style={{ width: 60, padding: '10px 14px' }}>操作</div>
+              </div>
+              {/* 行 */}
+              {visibleItems.map((item) => {
+                const hint = getHint(item);
+                return (
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--line2)', fontSize: 12.5 }}>
+                    <div style={{ width: 130, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <StatusDot status={getStockDot(item.stock_level)} />
+                      <span style={{ color: 'var(--tx)' }}>{item.name}</span>
+                    </div>
+                    <div style={{ width: 90, padding: '10px 14px', color: 'var(--tx2)' }}>{item.total_amount || '-'}</div>
+                    <div style={{ width: 190, padding: '8px 14px' }}>
+                      <Segmented
+                        value={item.stock_level}
+                        onChange={(val) => handleStockChange(item, val as StockLevel)}
+                        options={STOCK_LEVELS.map((opt) => ({
+                          ...opt,
+                          style: {
+                            background: item.stock_level === opt.value ? getStockBg(opt.value) : undefined,
+                            color: item.stock_level === opt.value ? 'var(--tx)' : undefined,
+                          },
+                        }))}
+                        size="small"
+                      />
+                    </div>
+                    <div style={{ flex: 1, padding: '10px 14px', fontSize: 11.5, color: hint.color }}>{hint.text}</div>
+                    <div style={{ width: 60, padding: '10px 14px' }}>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(item)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx2)', fontSize: 14 }}
+                      >
+                        ✏
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
 
-      <Table
-        columns={columns}
-        dataSource={filteredItems}
-        rowKey="id"
-        loading={loading}
-        pagination={{ pageSize: 20 }}
-      />
-
-      {/* Add / Edit Modal */}
+      {/* 编辑弹窗 */}
       <Modal
-        title={editingItem ? TEXT.inventory.editIngredient : TEXT.inventory.addIngredient}
-        open={formModalOpen}
-        onOk={handleFormSubmit}
-        onCancel={() => setFormModalOpen(false)}
+        title={editing ? '编辑食材' : '添加食材'}
+        open={modalOpen}
+        onOk={handleSave}
+        onCancel={() => setModalOpen(false)}
         confirmLoading={submitting}
-        okText={TEXT.common.save}
-        cancelText={TEXT.common.cancel}
         destroyOnClose
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item
-            name="name"
-            label="名称"
-            rules={[{ required: true, message: '请输入食材名称' }]}
-          >
+        <Form form={form} layout="vertical">
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input />
           </Form.Item>
-          <Form.Item
-            name="category"
-            label="分类"
-            rules={[{ required: true, message: '请选择分类' }]}
-          >
+          <Form.Item name="category" label="分类" rules={[{ required: true, message: '请选择分类' }]}>
             <Select options={CATEGORY_OPTIONS} />
           </Form.Item>
-          <Form.Item name="total_amount" label="总量">
-            <Input />
+          <Form.Item name="total_amount" label="大概总量">
+            <Input placeholder="如：300g、2个" />
           </Form.Item>
           <Form.Item name="stock_level" label="库存档位">
-            <Select options={STOCK_LEVEL_OPTIONS} />
+            <Select options={STOCK_LEVELS} />
           </Form.Item>
-          <Form.Item name="unit" label="单位">
-            <Input />
+          <Form.Item name="last_restocked_at" label="入库时间">
+            <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="note" label="备注">
-            <Input.TextArea rows={3} />
-          </Form.Item>
+          {editing && (
+            <Form.Item>
+              <Button danger icon={<DeleteOutlined />} onClick={() => { handleDelete(editing.id); setModalOpen(false); }}>
+                删除
+              </Button>
+            </Form.Item>
+          )}
         </Form>
-      </Modal>
-
-      {/* Batch Update Modal */}
-      <Modal
-        title={TEXT.inventory.updateStock}
-        open={batchModalOpen}
-        onOk={handleBatchSubmit}
-        onCancel={() => setBatchModalOpen(false)}
-        confirmLoading={batchSubmitting}
-        okText={TEXT.inventory.batchUpdate}
-        cancelText={TEXT.common.cancel}
-        width={520}
-      >
-        <div style={{ marginTop: 16 }}>
-          {batchItems.map((item) => (
-            <div
-              key={item.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 12,
-              }}
-            >
-              <span style={{ fontWeight: 500 }}>{item.name}</span>
-              <Select
-                value={item.stock_level}
-                onChange={(val) =>
-                  setBatchItems((prev) =>
-                    prev.map((bi) =>
-                      bi.id === item.id ? { ...bi, stock_level: val } : bi
-                    )
-                  )
-                }
-                options={STOCK_LEVEL_OPTIONS}
-                style={{ width: 120 }}
-              />
-            </div>
-          ))}
-        </div>
       </Modal>
     </div>
   );

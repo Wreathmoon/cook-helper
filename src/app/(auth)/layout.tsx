@@ -14,5 +14,14 @@ export default async function AuthLayout({
     redirect('/login');
   }
 
-  return <AppLayout>{children}</AppLayout>;
+  return (
+    <AppLayout
+      user={{
+        email: user.email,
+        name: user.user_metadata?.name || user.user_metadata?.full_name || null,
+      }}
+    >
+      {children}
+    </AppLayout>
+  );
 }
