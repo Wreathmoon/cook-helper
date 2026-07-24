@@ -350,29 +350,26 @@ function RecipesSection({
             style={{ width: 200 }}
             size="small"
           />
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>
-            {TEXT.recipes.addRecipe}
-          </Button>
         </div>
-      </div>
-
-      {/* 第一张：新建菜谱卡 */}
-      <div
-        onClick={() => setAddModalOpen(true)}
-        style={{
-          display: 'inline-flex', width: 176, borderRadius: 14, cursor: 'pointer',
-          border: '1.5px dashed var(--primary)',
-          background: 'var(--primary-soft)', marginBottom: 12, marginRight: 12,
-          flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          padding: '24px 12px', gap: 6, verticalAlign: 'top',
-        }}
-      >
-        <PlusOutlined style={{ fontSize: 20, color: 'var(--primary)' }} />
-        <span style={{ fontSize: 12.5, color: 'var(--primary)', fontWeight: 600 }}>新建菜谱</span>
       </div>
 
       {/* 瀑布流 */}
       <div style={{ columns: '176px 4', columnGap: 12 }}>
+        {/* 新建菜谱卡 — inside the waterfall */}
+        <div
+          onClick={() => setAddModalOpen(true)}
+          style={{
+            breakInside: 'avoid', marginBottom: 12, borderRadius: 14,
+            border: '1.5px dashed var(--primary)',
+            background: 'var(--primary-soft)',
+            cursor: 'pointer',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            padding: '24px 12px', gap: 6,
+          }}
+        >
+          <PlusOutlined style={{ fontSize: 20, color: 'var(--primary)' }} />
+          <span style={{ fontSize: 12.5, color: 'var(--primary)', fontWeight: 600 }}>新建菜谱</span>
+        </div>
         {filtered.map((recipe) => {
           const ingStatus = getIngredientStatus(recipe.id, ingredients);
           const allEnough = ingStatus.every((i) => i.status === 'enough');
@@ -455,7 +452,7 @@ function RecipesSection({
         onCancel={() => setSelectedRecipe(null)}
         footer={null}
         width={900}
-        styles={{ body: { padding: 0, height: 580, display: 'flex', overflow: 'hidden' }, mask: { background: 'rgba(30,20,12,.45)' } }}
+        styles={{ body: { padding: 0, maxHeight: '90vh', overflowY: 'auto', display: 'flex' }, mask: { background: 'rgba(30,20,12,.45)' } }}
       >
         {selectedRecipe && (
           <>
@@ -487,7 +484,6 @@ function RecipesSection({
                     );
                   })()}
                 </div>
-                <Button type="text" size="small" onClick={() => setSelectedRecipe(null)} style={{ color: 'var(--tx2)' }}>✕</Button>
               </div>
 
               <div style={{ fontSize: 11.5, color: 'var(--tx2)', marginBottom: 12 }}>
