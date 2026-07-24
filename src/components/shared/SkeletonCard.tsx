@@ -20,9 +20,9 @@ export function SkeletonCard({
         ...style,
       }}
     >
-      <div className="skeleton-shimmer" style={{ height: height * 0.62, borderRadius: 10 }} />
-      <div className="skeleton-shimmer" style={{ height: 12, width: '70%', borderRadius: 4 }} />
-      <div className="skeleton-shimmer" style={{ height: 10, width: '45%', borderRadius: 4 }} />
+      <div className="sk-shimmer" style={{ height: height * 0.62, borderRadius: 10 }} />
+      <div className="sk-shimmer" style={{ height: 12, width: '70%', borderRadius: 4 }} />
+      <div className="sk-shimmer" style={{ height: 10, width: '45%', borderRadius: 4 }} />
     </div>
   );
 }

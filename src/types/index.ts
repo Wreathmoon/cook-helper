@@ -32,6 +32,7 @@ export interface Utensil {
   id: string;
   user_id: string;
   name: string;
+  category?: string; // "锅具" | "电器" | "其他"
   note: string | null;
   created_at: string;
   updated_at: string;

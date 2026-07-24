@@ -75,19 +75,22 @@ interface NavItem {
 }
 
 const AUTH_NAV_ITEMS: NavItem[] = [
-  { key: '/recommend', label: '智能推荐', icon: RecommendIcon },
-  { key: '/recipes', label: '菜谱库', icon: RecipesIcon },
-  { key: '/inventory', label: '食材库存', icon: InventoryIcon },
-  { key: '/utensils', label: '我的厨具', icon: UtensilsIcon },
-  { key: '/calendar', label: '烹饪日历', icon: CalendarIcon },
+  { key: '/recommend', label: '推荐', icon: RecommendIcon },
+  { key: '/calendar', label: '日历', icon: CalendarIcon },
+  { key: '/recipes', label: '菜谱', icon: RecipesIcon },
+  { key: '/inventory', label: '食材', icon: InventoryIcon },
+  { key: '/utensils', label: '厨具', icon: UtensilsIcon },
 ];
 
-const TAB_KEYS = ['recommend', 'recipes', 'inventory', 'utensils', 'calendar'];
+const TAB_KEYS = ['recommend', 'calendar', 'recipes', 'inventory', 'utensils'];
 
-function GuestNav() {
+type SidebarMode = 'full' | 'icon' | 'compact';
+
+function GuestNav({ mode }: { mode: SidebarMode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeTab = searchParams.get('tab') || 'recommend';
+  const iconOnly = mode !== 'full';
 
   return (
     <nav
@@ -108,11 +111,13 @@ function GuestNav() {
           <Link
             key={item.key}
             href={`/demo?tab=${tabKey}`}
+            title={iconOnly ? item.label : undefined}
             style={{
               display: 'flex',
               alignItems: 'center',
+              justifyContent: iconOnly ? 'center' : 'flex-start',
               gap: 10,
-              padding: '10px 16px',
+              padding: '9px 12px',
               borderRadius: 10,
               fontSize: 13,
               fontWeight: active ? 600 : 400,
@@ -121,8 +126,8 @@ function GuestNav() {
               textDecoration: 'none',
             }}
           >
-            <Icon />
-            {item.label}
+            <Icon size={16} />
+            {!iconOnly && item.label}
           </Link>
         );
       })}
@@ -130,8 +135,9 @@ function GuestNav() {
   );
 }
 
-function AuthNav() {
+function AuthNav({ mode }: { mode: SidebarMode }) {
   const pathname = usePathname();
+  const iconOnly = mode !== 'full';
 
   return (
     <nav
@@ -151,11 +157,13 @@ function AuthNav() {
           <Link
             key={item.key}
             href={item.key}
+            title={iconOnly ? item.label : undefined}
             style={{
               display: 'flex',
               alignItems: 'center',
+              justifyContent: iconOnly ? 'center' : 'flex-start',
               gap: 10,
-              padding: '10px 16px',
+              padding: '9px 12px',
               borderRadius: 10,
               fontSize: 13,
               fontWeight: active ? 600 : 400,
@@ -164,8 +172,8 @@ function AuthNav() {
               textDecoration: 'none',
             }}
           >
-            <Icon />
-            {item.label}
+            <Icon size={16} />
+            {!iconOnly && item.label}
           </Link>
         );
       })}
@@ -193,6 +201,23 @@ export function AppLayout({
   const displayName = user?.name || user?.email || '游客';
   const initial = displayName.charAt(0).toUpperCase();
 
+  const [sidebarMode, setSidebarMode] = React.useState<SidebarMode>('full');
+
+  React.useEffect(() => {
+    const updateMode = () => {
+      const w = window.innerWidth;
+      if (w > 820) setSidebarMode('full');
+      else if (w > 560) setSidebarMode('icon');
+      else setSidebarMode('compact');
+    };
+    updateMode();
+    window.addEventListener('resize', updateMode);
+    return () => window.removeEventListener('resize', updateMode);
+  }, []);
+
+  const iconOnly = sidebarMode !== 'full';
+  const paddingSize = sidebarMode === 'compact' ? '12px' : '24px 20px';
+
   const handleSignOut = async () => {
     await signOut();
     router.push('/login');
@@ -202,7 +227,7 @@ export function AppLayout({
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg)' }}>
       <aside
         style={{
-          width: 208,
+          width: iconOnly ? 56 : 214,
           flexShrink: 0,
           background: 'var(--side)',
           borderRight: '1px solid var(--line)',
@@ -211,40 +236,25 @@ export function AppLayout({
           height: '100vh',
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 8,
-            padding: '24px 16px 20px',
-          }}
-        >
+        {!iconOnly && (
           <div
             style={{
-              width: 48,
-              height: 48,
-              borderRadius: 14,
-              background: 'var(--logo-gradient)',
-              color: '#fff',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 16,
-              fontWeight: 700,
+              padding: '20px 16px 16px',
             }}
           >
-            CH
+            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--tx)' }}>做饭小助手</div>
           </div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)' }}>Cook Helper</div>
-        </div>
+        )}
 
         {isGuest ? (
           <Suspense fallback={<nav style={{ flex: 1 }} />}>
-            <GuestNav />
+            <GuestNav mode={sidebarMode} />
           </Suspense>
         ) : (
-          <AuthNav />
+          <AuthNav mode={sidebarMode} />
         )}
 
         <div
@@ -286,7 +296,6 @@ export function AppLayout({
                   >
                     游客
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--tx2)' }}>只读 Demo</div>
                 </div>
                 <button
                   type="button"
@@ -400,22 +409,8 @@ export function AppLayout({
         </div>
       </aside>
 
-      <main style={{ flex: 1, overflowX: 'auto', height: '100vh' }}>
-        {isGuest && (
-          <div
-            style={{
-              padding: '8px 16px',
-              background: 'var(--warn-bg)',
-              color: 'var(--warn)',
-              fontSize: 12,
-              textAlign: 'center',
-              fontWeight: 600,
-            }}
-          >
-            只读体验 Demo · 演示数据 · 修改功能已锁定
-          </div>
-        )}
-        <div style={{ minWidth: 1000, padding: 24 }}>{children}</div>
+      <main style={{ flex: 1, overflow: 'hidden', height: '100vh', position: 'relative' }}>
+        <div style={{ height: '100%', overflow: 'auto', padding: paddingSize }}>{children}</div>
       </main>
     </div>
   );

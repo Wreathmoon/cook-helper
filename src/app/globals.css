@@ -9,13 +9,13 @@
   --tx: #2f2a21;
   --tx2: #98907f;
 
-  --primary: #e8a850;
-  --primary-btn: #e8a850;
+  --primary: #bc4f38;
+  --primary-btn: #c25742;
   --primary-btn-tx: #ffffff;
   --primary-soft: #f8e2d9;
   --hover: #f4e9de;
 
-  --success: #5b9e5b;
+  --success: #67923d;
   --warn: #c79016;
   --danger: #c9503c;
   --notice: #cf7a33;
@@ -33,8 +33,6 @@
 
   --shadow-card: 0 1px 2px rgba(60, 50, 30, 0.05), 0 4px 14px rgba(60, 50, 30, 0.05);
   --shadow-card-hover: 0 2px 4px rgba(60, 50, 30, 0.08), 0 10px 24px rgba(60, 50, 30, 0.1);
-
-  --logo-gradient: linear-gradient(135deg, #dd7a55, #ae4128);
 }
 
 .dk {
@@ -149,7 +147,7 @@ a {
   color: var(--primary);
 }
 
-@keyframes skeleton-shimmer {
+@keyframes shimmer {
   0% {
     background-position: -200% 0;
   }
@@ -158,10 +156,33 @@ a {
   }
 }
 
-.skeleton-shimmer {
+.sk-shimmer {
   background: linear-gradient(90deg, var(--hover) 25%, var(--line2) 50%, var(--hover) 75%);
   background-size: 200% 100%;
-  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes savedpulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.97);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes popin {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .otp-narrow input {

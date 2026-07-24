@@ -59,6 +59,8 @@ export default function InventoryPage() {
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+  // Track which stock level group is animating
+  const [pulsingId, setPulsingId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -135,9 +137,14 @@ export default function InventoryPage() {
   };
 
   const handleStockChange = async (item: InventoryItem, level: StockLevel) => {
-    const res = await updateInventoryItemAction(item.id, { ...item, stock_level: level });
+    setPulsingId(item.id);
+    const res = await updateInventoryItemAction(item.id, { stock_level: level });
     if (res.error) message.error(res.error);
-    else fetchData();
+    else {
+      message.success(`已将「${item.name}」设为${STOCK_LEVELS.find((s) => s.value === level)?.label}`);
+      fetchData();
+    }
+    setTimeout(() => setPulsingId(null), 500);
   };
 
   return (
@@ -146,7 +153,7 @@ export default function InventoryPage() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>{TEXT.inventory.addIngredient}</Button>
       </PageHeader>
 
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {/* 左侧分类 */}
         <div style={{ width: 172, flexShrink: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
           {CATEGORIES.map((cat) => {
@@ -176,53 +183,58 @@ export default function InventoryPage() {
         </div>
 
         {/* 右侧表格 */}
-        <div style={{ flex: 1, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minWidth: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
           {visibleItems.length === 0 && !loading ? (
             <div style={{ textAlign: 'center', padding: 60, fontSize: 13, color: 'var(--tx2)' }}>暂无食材</div>
           ) : (
             <div style={{ width: '100%' }}>
               {/* 表头 */}
               <div style={{ display: 'flex', background: 'var(--hover)', fontSize: 11.5, color: 'var(--tx2)', fontWeight: 600, borderBottom: '1px solid var(--line)' }}>
-                <div style={{ width: 130, padding: '10px 14px' }}>名称</div>
-                <div style={{ width: 90, padding: '10px 14px' }}>总量</div>
-                <div style={{ width: 190, padding: '10px 14px' }}>库存档位</div>
+                <div style={{ width: 110, padding: '10px 14px' }}>名称</div>
+                <div style={{ width: 176, padding: '10px 14px' }}>库存档位·点击即存</div>
                 <div style={{ flex: 1, padding: '10px 14px' }}>提示</div>
-                <div style={{ width: 60, padding: '10px 14px' }}>操作</div>
               </div>
               {/* 行 */}
               {visibleItems.map((item) => {
                 const hint = getHint(item);
                 return (
-                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--line2)', fontSize: 12.5 }}>
-                    <div style={{ width: 130, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    key={item.id}
+                    onClick={() => openEdit(item)}
+                    style={{
+                      display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--line2)', fontSize: 12.5,
+                      cursor: 'pointer', transition: 'background 0.12s',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hover)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
+                  >
+                    <div style={{ width: 110, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                       <StatusDot status={getStockDot(item.stock_level)} />
                       <span style={{ color: 'var(--tx)' }}>{item.name}</span>
                     </div>
-                    <div style={{ width: 90, padding: '10px 14px', color: 'var(--tx2)' }}>{item.total_amount || '-'}</div>
-                    <div style={{ width: 190, padding: '8px 14px' }}>
-                      <Segmented
-                        value={item.stock_level}
-                        onChange={(val) => handleStockChange(item, val as StockLevel)}
-                        options={STOCK_LEVELS.map((opt) => ({
-                          ...opt,
-                          style: {
-                            background: item.stock_level === opt.value ? getStockBg(opt.value) : undefined,
-                            color: item.stock_level === opt.value ? 'var(--tx)' : undefined,
-                          },
-                        }))}
-                        size="small"
-                      />
+                    <div
+                      style={{ width: 176, padding: '8px 14px' }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div
+                        className={pulsingId === item.id ? 'saved-pulse' : ''}
+                        style={{ animation: pulsingId === item.id ? 'savedpulse 0.5s ease' : undefined }}
+                      >
+                        <Segmented
+                          value={item.stock_level}
+                          onChange={(val) => handleStockChange(item, val as StockLevel)}
+                          options={STOCK_LEVELS.map((opt) => ({
+                            ...opt,
+                            style: {
+                              background: item.stock_level === opt.value ? getStockBg(opt.value) : undefined,
+                              color: item.stock_level === opt.value ? 'var(--tx)' : undefined,
+                            },
+                          }))}
+                          size="small"
+                        />
+                      </div>
                     </div>
                     <div style={{ flex: 1, padding: '10px 14px', fontSize: 11.5, color: hint.color }}>{hint.text}</div>
-                    <div style={{ width: 60, padding: '10px 14px' }}>
-                      <button
-                        type="button"
-                        onClick={() => openEdit(item)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx2)', fontSize: 14 }}
-                      >
-                        ✏
-                      </button>
-                    </div>
                   </div>
                 );
               })}
@@ -246,9 +258,6 @@ export default function InventoryPage() {
           </Form.Item>
           <Form.Item name="category" label="分类" rules={[{ required: true, message: '请选择分类' }]}>
             <Select options={CATEGORY_OPTIONS} />
-          </Form.Item>
-          <Form.Item name="total_amount" label="大概总量">
-            <Input placeholder="如：300g、2个" />
           </Form.Item>
           <Form.Item name="stock_level" label="库存档位">
             <Select options={STOCK_LEVELS} />

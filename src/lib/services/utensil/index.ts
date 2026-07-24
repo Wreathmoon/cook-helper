@@ -24,7 +24,7 @@ export async function listUtensils(
 export async function addUtensil(
   supabase: SupabaseClient,
   userId: string,
-  item: { name: string; note?: string }
+  item: { name: string; category?: string; note?: string }
 ): Promise<{ data: Utensil | null; error: string | null }> {
   const { data, error } = await supabase
     .from('utensils')
@@ -48,4 +48,22 @@ export async function deleteUtensil(
     .eq('user_id', userId);
 
   return { error: error?.message || null };
+}
+
+/** 更新厨具 */
+export async function updateUtensil(
+  supabase: SupabaseClient,
+  userId: string,
+  id: string,
+  updates: { name?: string; category?: string; note?: string }
+): Promise<{ data: Utensil | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('utensils')
+    .update(updates)
+    .eq('id', id)
+    .eq('user_id', userId)
+    .select()
+    .single();
+
+  return { data, error: error?.message || null };
 }

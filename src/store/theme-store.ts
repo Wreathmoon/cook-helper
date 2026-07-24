@@ -12,6 +12,6 @@ export const useThemeStore = create<ThemeState>()(
       isDarkMode: false,
       toggleTheme: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
     }),
-    { name: 'theme-storage' }
+    { name: 'ch-theme' }
   )
 );
