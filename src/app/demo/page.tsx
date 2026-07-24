@@ -704,9 +704,9 @@ function RecommendSection({
   };
 
   return (
-    <div style={{ display: 'flex', gap: 16 }}>
+    <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
       {/* 左中：推荐内容 */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: '1 1 480px', minWidth: 0 }}>
         {/* 头部 */}
         <div style={{ marginBottom: 16 }}>
           <Title level={4} style={{ margin: 0 }}>今晚吃什么？</Title>
@@ -899,11 +899,10 @@ function RecommendSection({
       </div>
 
       {/* 右侧购物清单 */}
-      <div style={{
-        width: 262, flexShrink: 0, borderRadius: 14,
+      <div className="shoplist" style={{
+        borderRadius: 14,
         background: 'var(--panel)', border: '1px solid var(--line)',
         padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
-        alignSelf: 'flex-start',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <ShoppingCartOutlined style={{ color: 'var(--primary)', fontSize: 14 }} />

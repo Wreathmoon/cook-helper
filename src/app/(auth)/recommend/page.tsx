@@ -420,6 +420,8 @@ function AltCard({
       onClick={onClick}
       style={{
         flex: '1 1 200px',
+        minWidth: 190,
+        maxWidth: 260,
         borderRadius: 14,
         background: 'var(--panel)',
         border: '1px solid var(--line)',
@@ -511,11 +513,8 @@ function ShoppingPanel({
 }) {
   return (
     <div
+      className="shoplist"
       style={{
-        flex: '1 1 270px',
-        maxWidth: 300,
-        minWidth: 220,
-        alignSelf: 'flex-start',
         borderRadius: 14,
         background: 'var(--panel)',
         border: '1px solid var(--line)',
@@ -874,9 +873,9 @@ export default function RecommendPage() {
         </div>
       </PageHeader>
 
-      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {/* 左侧：今日推荐 + 备选推荐 */}
-        <div style={{ flex: '2 1 640px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 22 }}>
+        <div style={{ flex: '1 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)' }}>

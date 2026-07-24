@@ -155,7 +155,7 @@ export default function InventoryPage() {
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {/* 左侧分类 */}
-        <div style={{ width: 172, flexShrink: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
+        <div style={{ flex: '0 0 172px', borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
           {CATEGORIES.map((cat) => {
             const active = activeCat === cat.key;
             const stat = categoryStats[cat.key] ?? { count: 0, alert: false };
@@ -183,7 +183,7 @@ export default function InventoryPage() {
         </div>
 
         {/* 右侧表格 */}
-        <div style={{ flex: 1, minWidth: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
+        <div style={{ flex: '1 1 460px', minWidth: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
           {visibleItems.length === 0 && !loading ? (
             <div style={{ textAlign: 'center', padding: 60, fontSize: 13, color: 'var(--tx2)' }}>暂无食材</div>
           ) : (

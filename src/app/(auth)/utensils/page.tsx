@@ -101,7 +101,7 @@ export default function UtensilsPage() {
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {/* 左侧分类栏 */}
-        <div style={{ width: 172, flexShrink: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
+        <div style={{ flex: '0 0 172px', borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
           {CATEGORIES.map((cat) => {
             const active = activeCat === cat.key;
             const count = categoryStats[cat.key] ?? 0;
@@ -126,7 +126,7 @@ export default function UtensilsPage() {
         </div>
 
         {/* 右侧表格 */}
-        <div style={{ flex: 1, minWidth: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
+        <div style={{ flex: '1 1 460px', minWidth: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
           {visibleItems.length === 0 && !loading ? (
             <div style={{ textAlign: 'center', padding: 60, fontSize: 13, color: 'var(--tx2)' }}>暂无厨具</div>
           ) : (

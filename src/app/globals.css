@@ -230,3 +230,97 @@ a {
 .otp-narrow .ant-otp {
   gap: 4px;
 }
+
+/* ─── 布局 — 侧边栏响应式 ─── */
+.layout-side {
+  width: 214px;
+  flex-shrink: 0;
+  background: var(--side);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  transition: width 0.18s;
+}
+
+.layout-side .nav-label {
+  white-space: nowrap;
+}
+
+.layout-side .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+}
+
+/* ─── 内容区 ─── */
+.page-body {
+  padding: 22px 24px;
+  overflow: auto;
+  flex: 1;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px 0;
+  flex: none;
+  flex-wrap: wrap;
+}
+
+/* ─── 购物清单 (推荐页右侧卡) ─── */
+.shoplist {
+  flex: 1 1 270px;
+  max-width: 300px;
+  align-self: flex-start;
+}
+
+/* ══════════════════════════════════════════════
+   响应式断点 — 纯 CSS，匹配 Cloud Design
+   ══════════════════════════════════════════════ */
+
+/* ≤1160px: 购物清单换行占满整行 */
+@media (max-width: 1160px) {
+  .shoplist {
+    flex-basis: 100% !important;
+    max-width: none !important;
+  }
+}
+
+/* ≤820px: 侧边栏收成图标模式 */
+@media (max-width: 820px) {
+  .layout-side {
+    width: 60px;
+    padding: 16px 8px 14px;
+  }
+
+  .layout-side .nav-label,
+  .layout-side .logo-text,
+  .layout-side .user-text {
+    display: none;
+  }
+
+  .layout-side .nav-item {
+    justify-content: center;
+    padding: 9px 0;
+  }
+
+  .layout-side .user-area {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+}
+
+/* ≤560px: 收紧内边距 */
+@media (max-width: 560px) {
+  .page-body {
+    padding: 14px;
+  }
+
+  .page-head {
+    padding: 16px 14px 0;
+  }
+}
