@@ -121,6 +121,75 @@ a {
   box-shadow: var(--shadow-card-hover);
 }
 
+/* ─── 自定义复选框 (Cloud Design .cb) ─── */
+
+.cb {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 5px;
+  flex-shrink: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cb:hover {
+  border-color: var(--primary);
+}
+
+.cb.on {
+  background: var(--primary-btn);
+  border-color: var(--primary-btn);
+  color: var(--primary-btn-tx);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cb.on::after {
+  content: '✓';
+}
+
+/* ─── 特征文字颜色 (Cloud Design trait) ─── */
+
+.tg { color: var(--success); }
+.ty { color: var(--warn); }
+.tr { color: var(--danger); }
+.to { color: var(--notice); }
+
+/* ─── 推荐理由行 ─── */
+
+.reason-row {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  font-size: 12px;
+}
+
+.reason-row .dot {
+  margin-top: 5px;
+}
+
+/* ─── 版块小标题 ─── */
+
+.section-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.section-cnt {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tx2);
+  background: var(--hover);
+  border-radius: 99px;
+  padding: 0 8px;
+}
+
 .cal-cell {
   transition: background-color 0.12s;
 }
@@ -255,12 +324,7 @@ a {
   border-radius: 10px;
 }
 
-/* ─── 内容区 ─── */
-.page-body {
-  padding: 22px 24px;
-  overflow: auto;
-  flex: 1;
-}
+/* ─── 内容区：.page-head(页头) + .page-body(内容) ─── */
 
 .page-head {
   display: flex;
@@ -271,23 +335,15 @@ a {
   flex-wrap: wrap;
 }
 
-/* ─── 购物清单 (推荐页右侧卡) ─── */
-.shoplist {
-  flex: 1 1 270px;
-  max-width: 300px;
-  align-self: flex-start;
+.page-body {
+  padding: 16px 24px 22px;
+  overflow: auto;
+  flex: 1;
 }
 
-/* ══════════════════════════════════════════════
-   响应式断点 — 纯 CSS，匹配 Cloud Design
-   ══════════════════════════════════════════════ */
-
-/* ≤1160px: 购物清单换行占满整行 */
-@media (max-width: 1160px) {
-  .shoplist {
-    flex-basis: 100% !important;
-    max-width: none !important;
-  }
+/* ─── 购物清单 (推荐页中间栏，全宽) ─── */
+.shoplist {
+  width: 100%;
 }
 
 /* ≤820px: 侧边栏收成图标模式 */

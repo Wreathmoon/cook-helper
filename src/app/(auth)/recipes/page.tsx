@@ -55,7 +55,7 @@ function WaterfallCard({
       className="card-hover"
       style={{
         breakInside: 'avoid',
-        marginBottom: 12,
+        marginBottom: 10,
         borderRadius: 14,
         background: 'var(--panel)',
         border: '1px solid var(--line)',
@@ -168,7 +168,7 @@ export default function RecipesPage() {
   };
 
   return (
-    <div>
+    <div className="page-body">
       <PageHeader
         title="菜谱库"
         subtitle={`${recipes.length} 道菜谱`}
@@ -194,39 +194,39 @@ export default function RecipesPage() {
       </PageHeader>
 
       {loading ? (
-        <div style={{ columns: '176px 4', columnGap: 12 }}>
+        <div style={{ columns: '180px 4', columnGap: 10 }}>
           <SkeletonCard height={160} />
           <SkeletonCard height={140} />
           <SkeletonCard height={180} />
           <SkeletonCard height={150} />
         </div>
       ) : recipes.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 80, fontSize: 13, color: 'var(--tx2)' }}>
+        <div style={{ textAlign: 'center', paddingTop: 80, paddingBottom: 80, fontSize: 13, color: 'var(--tx2)' }}>
           还没有菜谱，点击右上角新建
         </div>
       ) : (
-        <div style={{ columns: '176px 4', columnGap: 12 }}>
-          {/* 新建菜谱卡 — 链接到 /recipes/new */}
-          <Link href="/recipes/new"
-            style={{
-              breakInside: 'avoid',
-              marginBottom: 12,
-              borderRadius: 14,
-              border: '1.5px dashed var(--primary)',
-              background: 'var(--primary-soft)',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              padding: 40, cursor: 'pointer', color: 'var(--primary)', fontSize: 13, fontWeight: 600, gap: 8,
-              textDecoration: 'none',
-            }}
-          >
-            <span style={{ fontSize: 24 }}>+</span>
-            <span>新建菜谱</span>
-          </Link>
+        <div style={{ columns: '180px 4', columnGap: 10 }}>
+            {/* 新建菜谱卡 — 链接到 /recipes/new */}
+            <Link href="/recipes/new"
+              style={{
+                breakInside: 'avoid',
+                marginBottom: 10,
+                borderRadius: 14,
+                border: '1.5px dashed var(--primary)',
+                background: 'var(--primary-soft)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                padding: 40, cursor: 'pointer', color: 'var(--primary)', fontSize: 13, fontWeight: 600, gap: 8,
+                textDecoration: 'none',
+              }}
+            >
+              <span style={{ fontSize: 24 }}>+</span>
+              <span>新建菜谱</span>
+            </Link>
 
-          {recipes.map((recipe) => (
-            <WaterfallCard key={recipe.id} recipe={recipe} missingCount={missingMap[recipe.id] ?? null} cookCount={cookCountMap[recipe.id] || 0} onClick={() => setDetailRecipe(recipe)} />
-          ))}
-        </div>
+            {recipes.map((recipe) => (
+              <WaterfallCard key={recipe.id} recipe={recipe} missingCount={missingMap[recipe.id] ?? null} cookCount={cookCountMap[recipe.id] || 0} onClick={() => setDetailRecipe(recipe)} />
+            ))}
+          </div>
       )}
 
       <RecipeDetailModal recipe={detailRecipe} open={!!detailRecipe} onClose={() => setDetailRecipe(null)} />

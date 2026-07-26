@@ -192,26 +192,28 @@ export function AppLayout({
           <AuthNav />
         )}
 
-        <div className="user-area" style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '10px 8px 0', borderTop: '1px solid var(--line)', marginTop: 'auto' }}>
+        <div className="user-area" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 8px 0', borderTop: '1px solid var(--line)', marginTop: 'auto' }}>
           {isGuest ? (
             <>
-              <div style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, background: 'var(--primary-soft)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
-                游
-              </div>
-              <div className="user-text" style={{ minWidth: 0, flex: 1 }}>
-                <b style={{ fontSize: 12, color: 'var(--tx)' }}>游客</b>
-                <div style={{ fontSize: 10.5, color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  只读 Demo
+              <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
+                <div style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, background: 'var(--primary-soft)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
+                  游
                 </div>
+                <div className="user-text" style={{ minWidth: 0, flex: 1 }}>
+                  <b style={{ fontSize: 12, color: 'var(--tx)' }}>游客</b>
+                  <div style={{ fontSize: 10.5, color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    只读 Demo
+                  </div>
+                </div>
+                <button
+                  type="button" onClick={toggleTheme}
+                  title={isDarkMode ? '切换到浅色' : '切换到深色'}
+                  style={{ width: 26, height: 26, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--tx)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}
+                >
+                  {isDarkMode ? <MoonOutlined /> : <SunOutlined />}
+                </button>
               </div>
-              <button
-                type="button" onClick={toggleTheme}
-                title={isDarkMode ? '切换到浅色' : '切换到深色'}
-                style={{ marginLeft: 'auto', width: 26, height: 26, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--tx)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}
-              >
-                {isDarkMode ? <MoonOutlined /> : <SunOutlined />}
-              </button>
-              <Button type="primary" block size="small" icon={<UserOutlined />} onClick={() => router.push('/login')} style={{ width: '100%', marginTop: 4 }}>
+              <Button type="primary" block size="small" icon={<UserOutlined />} onClick={() => router.push('/login')}>
                 登录 / 注册
               </Button>
             </>

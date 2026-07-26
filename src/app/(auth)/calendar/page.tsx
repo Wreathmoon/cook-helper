@@ -192,7 +192,7 @@ export default function CalendarPage() {
   const filteredQuickRecipes = recipes.filter((r) => r.name.toLowerCase().includes(quickAddSearch.toLowerCase()));
 
   return (
-    <div>
+    <div className="page-body">
       <PageHeader title="烹饪日历">
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button type="button" onClick={() => setMonth(month.subtract(1, 'month'))}
@@ -215,7 +215,7 @@ export default function CalendarPage() {
         </Button>
       </PageHeader>
 
-      <div style={{ display: 'flex', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 16, padding: '18px 20px', borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)' }}>
         {/* 月视图 */}
         <div style={{ flex: 1 }}>
           {/* 星期行 */}

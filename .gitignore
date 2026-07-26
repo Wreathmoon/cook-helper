@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# project blueprint docs (local AI agent reference, not for public repo)
+DESIGN.md
+SPEC.md
+FUTURE.md
+Task/
+
+# hermes agent local state
+.hermes/
+.worktrees/
+
+# supabase local temp
+supabase/.temp/
