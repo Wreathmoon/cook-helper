@@ -29,11 +29,16 @@ npm run dev
 ## 提 PR 之前
 
 ```bash
-npm run lint
 npm run test
 ```
 
-两个都要过。
+39 个测试必须全绿。
+
+```bash
+npm run lint
+```
+
+⚠️ **lint 目前跑不干净**——仓库有一批历史遗留问题（约 36 个 error，主要是 `no-unused-vars` 和 `no-explicit-any`），清理工作尚未排期。所以这里的要求不是「零 error」，而是**别引入新的**：改动前后各跑一次，数字不增加即可。
 
 ## 提 Issue
 

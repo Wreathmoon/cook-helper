@@ -1,4 +1,5 @@
-// 二期将由 LLM 决策取代
+// 规则引擎配置。二期 LLM 增强而非替换本层——规则引擎保留为基线，
+// 无 API key 时产品完全可用。见 DESIGN.md §1.3 / §3。
 export const RECOMMEND_CONFIG = {
   // 每档推荐数量
   topPerTier: 4,

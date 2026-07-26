@@ -370,13 +370,25 @@ initUserFromSeed(serviceRoleSupabase, userId)
 ### 配置常量 (`config.ts`)
 
 ```typescript
-// 清库存阈值: enough 超过 N 天 → clear_stock 档
-STOCK_EXPIRY_DAYS = { vegetable: 3, meat: 7, egg_dairy_bean: 5 }
-// staple, seasoning → Infinity (不提醒)
+export const RECOMMEND_CONFIG = {
+  // 每档推荐数量
+  topPerTier: 4,
 
-// 评分权重
-SCORING_WEIGHTS = { novelty: 0.4, clearStock: 0.3, timeMatch: 0.15, nutrition: 0.15 }
-TOP_N_PER_TIER = 5
+  // 清库存阈值（天数）— enough 放置超过 N 天才进「清库存」档
+  // staple 和 seasoning 不提醒
+  clearStockThreshold: { vegetable: 3, meat: 7, egg_dairy_bean: 5 },
+
+  // 档内评分权重
+  weights: {
+    noRepeat: 0.35,          // 不重样（距上次做的天数）
+    clearStock: 0.25,        // 清库存（含久放食材数量）
+    timeMatch: 0.20,         // 耗时匹配
+    nutritionBalance: 0.20,  // 营养搭配
+  },
+
+  // 「需额外购买」档：缺几样以内才推荐
+  maxMissingForShopping: 3,
+};
 ```
 
 ### 分档 (`tiering.ts`)
