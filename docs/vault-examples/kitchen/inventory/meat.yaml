@@ -1,0 +1,16 @@
+# 肉类库存 — 按名称排序
+- name: 鸡胸肉
+  total_amount: 300g
+  stock_level: enough
+  unit: g
+  last_restocked_at: 2026-07-25
+
+- name: 排骨
+  total_amount: 500g
+  stock_level: enough
+  unit: g
+  last_restocked_at: 2026-07-20
+
+- name: 猪肉
+  stock_level: low
+  note: 冷冻室还剩一小块

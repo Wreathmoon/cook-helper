@@ -1,0 +1,6 @@
+# 主食/干货库存 — 按名称排序
+- name: 大米
+  stock_level: enough
+
+- name: 面条
+  stock_level: low

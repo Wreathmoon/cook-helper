@@ -1,0 +1,27 @@
+# 调料库存 — 按名称排序
+- name: 白糖
+  stock_level: enough
+
+- name: 醋
+  stock_level: enough
+
+- name: 豆瓣酱
+  stock_level: enough
+
+- name: 干辣椒
+  stock_level: enough
+
+- name: 花椒
+  stock_level: enough
+
+- name: 料酒
+  stock_level: enough
+
+- name: 生抽
+  stock_level: enough
+
+- name: 食用油
+  stock_level: enough
+
+- name: 盐
+  stock_level: enough

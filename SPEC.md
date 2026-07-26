@@ -1,7 +1,8 @@
 # Cook Helper — Specification
 
-> **版本**: v1.0 | **更新**: 2026-07-23 | **状态**: 一期已上线  
-> **定位**: 本文档包含完整的技术实现规格——Schema、路由、Service 签名、部署步骤。AI Agent 可据此复刻项目。设计理念见 [DESIGN.md](./DESIGN.md)。  
+> **版本**: v2.0 | **更新**: 2026-07-26 | **状态**: 本地化改造完成  
+> **v2.0 的变化**：数据层从 Supabase PostgreSQL 整体换成**本机纯文本 vault**，认证与多用户移除。§2 / §3 / §7 / §9 / §10 全部重写。  
+> **定位**: 本文档包含完整的技术实现规格——数据格式、路由、Service 签名、部署步骤。AI Agent 可据此复刻项目。设计理念见 [DESIGN.md](./DESIGN.md)，数据文件格式见 [docs/vault-format.md](./docs/vault-format.md)。  
 > **读者**: 开发者、AI Agent（理解项目实现细节的第二站）。
 
 ---
@@ -16,8 +17,8 @@
 | antd | 5.29.3 | UI 组件库 |
 | @ant-design/pro-components | 2.8.10 | 高级组件 |
 | @ant-design/icons | 6.3.2 | 图标库 |
-| @supabase/ssr | 0.12.0 | Supabase SSR 客户端 |
-| @supabase/supabase-js | 2.110.8 | Supabase JS SDK |
+| **yaml** | 2.9.0 | vault 文件解析 / 序列化 |
+| **zod** | 4.4.3 | vault schema 校验（产出可定位的报错） |
 | zustand | 5.0.14 | 客户端状态管理 |
 | dayjs | 1.11.21 | 日期处理 |
 | vitest | 4.1.9 | 单测框架 |
@@ -26,167 +27,93 @@
 | jsdom | 29.1.1 | 测试环境 DOM |
 | tailwindcss | ^4 | 辅助样式 |
 | tsx | 4.23.0 | TS 脚本执行器 |
-| supabase (CLI) | 2.109.0 | 数据库迁移 |
+
+**没有数据库驱动、没有 ORM、没有后端 SDK。** 数据层只依赖 `yaml` 和 Node 内置的 `fs`。
 
 ---
 
-## 2. 数据库设计
+## 2. 数据设计
 
-### 2.1 PostgreSQL 枚举类型
+**没有数据库。**所有数据是 `data/kitchen/` 下的纯文本文件，字段级定义见 [docs/vault-format.md](./docs/vault-format.md)（本节不重复，避免两处定义漂移）。
 
-```sql
-CREATE TYPE inventory_category  AS ENUM ('vegetable','meat','egg_dairy_bean','staple','seasoning');
-CREATE TYPE stock_level         AS ENUM ('enough','low','out');
-CREATE TYPE difficulty          AS ENUM ('easy','medium','hard');
-CREATE TYPE ingredient_role     AS ENUM ('main','auxiliary','seasoning');
-CREATE TYPE calendar_status     AS ENUM ('planned','completed');
+### 2.1 目录布局
+
+```
+data/kitchen/                     # 运行时 vault（.gitignore）
+  recipes/{菜名}/recipe.md        # 文档型：YAML frontmatter + Markdown 正文
+  recipes/{菜名}/*.jpg            #   成品照与菜谱同目录
+  inventory/{分类}.yaml           # 记录型：5 个分类文件，按名称排序
+  utensils.yaml
+  calendar/{YYYY}-{MM}.yaml       # 按月分片
+  aliases.yaml                    # 食材别名表
+  config.yaml                     # 推荐引擎配置
+
+seed/                             # 随仓库发布的种子模板（进 git）
 ```
 
-### 2.2 inventory — 食材/调料库存
+`VAULT_PATH` 可把 vault 指到仓库外；默认 `./data`。首次启动时若 `data/` 不存在，
+`ensureVaultInitialized()` 会把 `seed/` 整个复制过去（排除 `README.md`）。
 
-| 列 | 类型 | 约束 | 说明 |
-|----|------|------|------|
-| id | UUID | PK, gen_random_uuid() | |
-| user_id | UUID | NOT NULL, FK→auth.users, ON DELETE CASCADE | |
-| name | TEXT | NOT NULL | |
-| category | inventory_category | NOT NULL | 5 分类 |
-| total_amount | TEXT | NULL | "500ml"/"200g"/"一瓶" |
-| stock_level | stock_level | NOT NULL, DEFAULT 'enough' | 三档制 |
-| unit | TEXT | NULL | g/ml/个/袋 |
-| last_restocked_at | TIMESTAMPTZ | NULL | stock_level→enough 时刷新 |
-| note | TEXT | NULL | |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
-| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+### 2.2 关联键：名称，不是 UUID
 
-### 2.3 utensils — 厨具
+| 实体 | `id` 从哪来 | 被谁引用 |
+|------|-----------|---------|
+| 库存食材 | **归一化后的 `name`**（加载时合成，文件里不写） | 菜谱 frontmatter 的 `ingredients[].name` |
+| 厨具 | **`name`**（同上） | 菜谱 frontmatter 的 `utensils[]` |
+| 菜谱 | 文件里的 ULID（缺省时用菜谱名兜底） | 日历的 `recipe_name`（按名称，非 id） |
+| 日历条目 | 文件里的 ULID（缺省时用 `{月份}:{序号}`） | — |
 
-| 列 | 类型 | 约束 |
-|----|------|------|
-| id | UUID | PK |
-| user_id | UUID | NOT NULL, FK→auth.users, ON DELETE CASCADE |
-| name | TEXT | NOT NULL |
-| note | TEXT | NULL |
-| created_at | TIMESTAMPTZ | DEFAULT now() |
-| updated_at | TIMESTAMPTZ | DEFAULT now() |
+> ⚠️ **这条决定了推荐引擎为什么一行没改**：`tiering.ts` 按 `InventoryItem.id` 建索引，
+> 而加载时 `id` 就是归一化名称，菜谱食材引用填的也是同一个归一化名称——两边天然对上。
+> 归一化属于数据层职责，不该漏进推荐层。
 
-### 2.4 recipes — 菜谱
+### 2.3 内存中的 Vault
 
-| 列 | 类型 | 约束 | 说明 |
-|----|------|------|------|
-| id | UUID | PK | |
-| user_id | UUID | NOT NULL, FK→auth.users, ON DELETE CASCADE | |
-| name | TEXT | NOT NULL | 唯一必填字段 |
-| steps | JSONB | NULL | `[{step_number:1, description:"切菜"}]` |
-| cook_time_minutes | INT | NULL | |
-| difficulty | difficulty | NULL | easy/medium/hard |
-| attributes | JSONB | NOT NULL, DEFAULT '{}' | **GIN 索引**，8 维标签全存 |
-| tips | TEXT | NULL | |
-| created_at | TIMESTAMPTZ | DEFAULT now() | |
-| updated_at | TIMESTAMPTZ | DEFAULT now() | |
+`loadVault(root)` 一次性把整个 vault 读进这个对象（`src/lib/vault/reader.ts`）：
 
-**`attributes` jsonb 结构**:
-```json
-{
-  "method":     ["炒","炖"],
-  "spiciness":  "中辣",
-  "greasiness": "适中",
-  "flavor":     "咸鲜",
-  "diet_type":  "荤素搭配",
-  "nutrition":  ["高蛋白"],
-  "scene":      ["工作日快手"],
-  "cuisine":    "川"
+```typescript
+interface Vault {
+  root: string;
+  recipes: Recipe[];
+  recipeDirs: Map<string, string>;                       // 菜谱 id → 磁盘目录名
+  recipeIngredients: Map<string, VaultRecipeIngredient[]>;  // inventory_id = 归一化名称
+  recipeUtensils: Map<string, string[]>;
+  recipePhotos: Map<string, RecipePhoto[]>;
+  inventory: InventoryItem[];
+  utensils: Utensil[];
+  calendar: CalendarEntry[];
+  calendarRecipeNames: Map<string, string>;              // 日历条目 id → 菜谱名
+  aliases: Map<string, string>;                          // 别名 → 规范名
+  config: typeof RECOMMEND_CONFIG;
 }
 ```
 
-### 2.5 recipe_ingredients — 菜谱-食材关联
+**不建 SQLite 派生索引**：49 食材 + 54 菜谱的量级，全量解析是毫秒级，`Map.get()` 是 O(1)。
+native addon 的跨平台编译问题会直接破坏「clone 完就能跑」。
 
-| 列 | 类型 | 约束 |
-|----|------|------|
-| id | UUID | PK |
-| recipe_id | UUID | NOT NULL, FK→recipes, ON DELETE CASCADE |
-| inventory_id | UUID | NOT NULL, FK→inventory, ON DELETE CASCADE |
-| role | ingredient_role | NOT NULL |
-| amount | TEXT | NULL, e.g. "300g" |
+### 2.4 校验与报错
 
-### 2.6 recipe_utensils — 菜谱-厨具关联
+`src/lib/vault/schema.ts` 用 Zod 定义每个文件的形状，`parseOrThrow()` 把 Zod 的报错
+翻译成 `VaultError`，带 **kind / file / line / field / hint**。典型输出：
 
-| 列 | 类型 | 约束 |
-|----|------|------|
-| id | UUID | PK |
-| recipe_id | UUID | NOT NULL, FK→recipes, ON DELETE CASCADE |
-| utensil_name | TEXT | NOT NULL (按名称匹配用户 utensils 表) |
-
-### 2.7 recipe_photos — 菜谱照片
-
-| 列 | 类型 | 约束 |
-|----|------|------|
-| id | UUID | PK |
-| recipe_id | UUID | NOT NULL, FK→recipes, ON DELETE CASCADE |
-| storage_path | TEXT | NOT NULL |
-| created_at | TIMESTAMPTZ | DEFAULT now() |
-
-### 2.8 calendar_entries — 烹饪记录/计划
-
-| 列 | 类型 | 约束 | 说明 |
-|----|------|------|------|
-| id | UUID | PK | |
-| user_id | UUID | NOT NULL, FK→auth.users, ON DELETE CASCADE | |
-| date | DATE | NOT NULL | |
-| recipe_id | UUID | NOT NULL, FK→recipes, ON DELETE CASCADE | |
-| status | calendar_status | NOT NULL, DEFAULT 'planned' | |
-| notes | TEXT | NULL | |
-| created_at | TIMESTAMPTZ | DEFAULT now() | |
-| updated_at | TIMESTAMPTZ | DEFAULT now() | |
-
-### 2.9 calendar_photos — 成品照
-
-| 列 | 类型 | 约束 |
-|----|------|------|
-| id | UUID | PK |
-| calendar_entry_id | UUID | NOT NULL, FK→calendar_entries, ON DELETE CASCADE |
-| storage_path | TEXT | NOT NULL |
-
-### 2.10 索引
-
-```sql
-CREATE INDEX idx_inventory_user_id    ON inventory(user_id);
-CREATE INDEX idx_inventory_category   ON inventory(user_id, category);
-CREATE INDEX idx_recipes_user_id      ON recipes(user_id);
-CREATE INDEX idx_recipes_attributes   ON recipes USING GIN (attributes);
-CREATE INDEX idx_recipe_ingredients   ON recipe_ingredients(recipe_id);
-CREATE INDEX idx_calendar_user_month  ON calendar_entries(user_id, date);
+```
+kitchen/inventory/vegetable.yaml 第 6 行：YAML 语法有误：Unexpected scalar at node end
+常见原因：缩进用了 Tab（YAML 只认空格）、冒号后面漏了空格、中文标点。
 ```
 
-### 2.11 RLS（所有用户表）
+启动时全量校验，任一失败都阻止启动——**宁可起不来，也不要带着半份坏数据算推荐**。
 
-```sql
--- 每个表启用 RLS，统一策略
-ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
-ALTER TABLE utensils ENABLE ROW LEVEL SECURITY;
-ALTER TABLE recipes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE recipe_ingredients ENABLE ROW LEVEL SECURITY;
-ALTER TABLE recipe_utensils ENABLE ROW LEVEL SECURITY;
-ALTER TABLE recipe_photos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE calendar_entries ENABLE ROW LEVEL SECURITY;
-ALTER TABLE calendar_photos ENABLE ROW LEVEL SECURITY;
+### 2.5 写入
 
-CREATE POLICY "owner_access" ON inventory
-  FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
--- (其他表同理)
-```
+全部走 `writeFileAtomic()`：同目录写 `.tmp` → `rename`。写到一半被强杀，正式文件
+要么是旧内容要么是新内容。单用户场景**不加锁**（docs/vault-format.md §6）。
 
-### 2.12 Storage Buckets
-
-```sql
-INSERT INTO storage.buckets (id, name, public) VALUES ('recipe-photos', 'recipe-photos', true);
-INSERT INTO storage.buckets (id, name, public) VALUES ('calendar-photos', 'calendar-photos', true);
-
-CREATE POLICY "owner_upload" ON storage.objects
-  FOR INSERT WITH CHECK (
-    bucket_id IN ('recipe-photos','calendar-photos')
-    AND auth.uid()::text = (storage.foldername(name))[1]
-  );
-```
+| 改动 | 重写哪个文件 |
+|------|------------|
+| 任一食材 | 该分类的整份 `inventory/{分类}.yaml`（按名称排序） |
+| 任一厨具 | `utensils.yaml` |
+| 任一菜谱 | `recipes/{菜名}/recipe.md`；改名 = 删旧目录 + 写新目录 |
+| 任一日历条目 | `calendar/{当月}.yaml`；整月清空则删文件 |
 
 ---
 
@@ -194,178 +121,165 @@ CREATE POLICY "owner_upload" ON storage.objects
 
 ### 3.1 路由表
 
-| 路由 | 文件 | 类型 | 认证 | 说明 |
-|------|------|:----:|:----:|------|
-| `/` | `page.tsx` | Server | 公开 | 根路由重定向（未登录→/demo, 已登录→/recommend） |
-| `/demo` | `demo/page.tsx` | Client | 公开 | 5 Tab Demo 页（716行） |
-| `/login` | `login/page.tsx` | Client | 公开 | 登录表单 |
-| `/register` | `register/page.tsx` | Client | 公开 | 两步注册（143行） |
-| `/recommend` | `(auth)/recommend/page.tsx` | Client | 🔒 | ★ 首页：推荐+购物清单 |
-| `/inventory` | `(auth)/inventory/page.tsx` | Client | 🔒 | 食材管理 |
-| `/utensils` | `(auth)/utensils/page.tsx` | Client | 🔒 | 厨具管理 |
-| `/recipes` | `(auth)/recipes/page.tsx` | Client | 🔒 | 菜谱管理（1354行，待拆分） |
-| `/calendar` | `(auth)/calendar/page.tsx` | Client | 🔒 | 烹饪日历 |
-| `/chat` | ❌ 未建 | — | 🔒 | 二期 AI Mode 入口 |
+**没有认证，没有路由守卫，没有路由组。**
 
-### 3.2 路由守卫
+| 路由 | 文件 | 类型 | 说明 |
+|------|------|:----:|------|
+| `/` | `page.tsx` | Server | 重定向到 `/recommend` |
+| `/recommend` | `recommend/page.tsx` | Client | ★ 首页：推荐 + 购物清单 |
+| `/inventory` | `inventory/page.tsx` | Client | 食材管理 |
+| `/utensils` | `utensils/page.tsx` | Client | 厨具管理 |
+| `/recipes` | `recipes/page.tsx` | Client | 菜谱库 |
+| `/recipes/new` | `recipes/new/page.tsx` | Client | 新建菜谱 |
+| `/calendar` | `calendar/page.tsx` | Client | 烹饪日历 |
+| `/api/photo` | `api/photo/route.ts` | Route Handler | 读 vault 里的照片；`..` 越界 → 403 |
 
-```typescript
-// src/middleware.ts
-// 基于 @supabase/ssr createServerClient
-// 刷新 session → 检查 (auth) 路由组 → 未登录 redirect /login
-// /demo, /login, /register 公开
-```
-
-### 3.3 Auth Layout
+### 3.2 根布局
 
 ```typescript
-// src/app/(auth)/layout.tsx — Server Component
-const supabase = await createClient();
-const { data: { user } } = await supabase.auth.getUser();
-if (!user) redirect('/login');
-return <AppLayout>{children}</AppLayout>;
+// src/app/layout.tsx — Server Component
+const readOnly = isReadOnly();          // READ_ONLY 环境变量
+<AntdRegistry><ThemeProvider>
+  <ReadOnlyProvider value={readOnly}>
+    <AppLayout readOnly={readOnly}>{children}</AppLayout>
+  </ReadOnlyProvider>
+</ThemeProvider></AntdRegistry>
 ```
+
+### 3.3 数据加载约定
+
+页面是 Client Component，首屏数据在 `useEffect` 里用**带取消标记的 async IIFE** 拉取：
+
+```typescript
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    const res = await getListInventory();
+    if (cancelled) return;
+    /* setState… */
+  })();
+  return () => { cancelled = true; };
+}, []);
+```
+
+这样筛选条件连续变化时旧请求不会覆盖新结果，组件卸载后也不再写状态
+（同时满足 `react-hooks/set-state-in-effect`——它只认内联的 IIFE，不认抽出去的 fetch 函数）。
 
 ---
 
 ## 4. Server Actions 接口
 
 所有 `'use server'` 异步函数，供 Client Component 直接调用。
+**统一形态**：从 `getVault()` 取 vault，交给 A 层 service，用 `guardData` / `guardResult`
+兜住异常，返回 `{data, error}`——vault 加载失败时用户看到的是「哪个文件第几行」，
+而不是 Next 的通用报错页。
 
-### 4.1 Auth (`src/app/actions/auth.ts`)
-
-| 函数 | 入参 | 出参 | 说明 |
-|------|------|------|------|
-| `signUp` | `{email, password}` | `{data, error}` | 调 supabase.auth.signUp() → 发 OTP |
-| `verifyOtp` | `{email, token}` | `{data, error}` | 调 supabase.auth.verifyOtp({type:'signup'}) → 成功→initUserFromSeed() |
-| `signIn` | `{email, password}` | `{data, error}` | 调 supabase.auth.signInWithPassword() |
-| `signOut` | — | void | 调 supabase.auth.signOut() → redirect('/login') |
-
-### 4.2 Inventory (`src/app/actions/inventory.ts`)
+### 4.1 Inventory (`src/app/actions/inventory.ts`)
 
 | 函数 | 说明 |
 |------|------|
-| `listInventory(category?)` | 按分类查询（可选） |
-| `addInventoryItem(data)` | 新增食材（name, category, total_amount?, unit?, note?） |
-| `updateInventoryItem(id, data)` | 编辑食材 |
-| `deleteInventoryItem(id)` | 删除食材 |
-| `batchUpdateStockLevel(items[])` | 批量更新库存档位 |
+| `getListInventory(category?)` | 按分类查询（可选） |
+| `addInventoryItemAction(item)` | 新增（name, category, total_amount?, unit?, note?, price?） |
+| `updateInventoryItemAction(id, updates)` | 编辑 |
+| `deleteInventoryItemAction(id)` | 删除 |
+| `batchUpdateStockLevelAction(items[])` | 批量改档位 |
 
-### 4.3 Recipe (`src/app/actions/recipe.ts`)
-
-| 函数 | 说明 |
-|------|------|
-| `listRecipes(filters?)` | 列表查询，支持 attributes jsonb 筛选 |
-| `getRecipeDetail(recipeId)` | 详情（含关联食材/厨具/照片） |
-| `createRecipe(data)` | 新建 + 关联表写入 |
-| `updateRecipe(id, data)` | 编辑 |
-| `deleteRecipe(id)` | 删除（CASCADE 关联） |
-| `uploadRecipePhoto(recipeId, file)` | 上传到 Supabase Storage |
-| `deleteRecipePhoto(photoId)` | 删除照片 |
-
-### 4.4 Utensil (`src/app/actions/utensil.ts`)
+### 4.2 Recipe (`src/app/actions/recipe.ts`)
 
 | 函数 | 说明 |
 |------|------|
-| `listUtensils()` | |
-| `addUtensil({name, note?})` | |
-| `deleteUtensil(id)` | |
+| `getListRecipes(filters?)` | 搜索 + 标签筛选 |
+| `getRecipeDetailAction(id)` | 详情（含食材状态、厨具、照片） |
+| `createRecipeAction(data)` / `updateRecipeAction(id, data)` / `deleteRecipeAction(id)` | CRUD |
+| `getInventoryForRecipe()` / `getUtensilsForRecipe()` | 表单下拉数据 |
+| `uploadRecipePhotoAction(id, formData)` | 保存照片到菜谱目录 |
+| `deleteRecipePhotoAction(photoId)` | 删除照片文件 + frontmatter 记录 |
+| `getPhotoUrl(storagePath)` | → `/api/photo?path=…` |
 
-### 4.5 Calendar (`src/app/actions/calendar.ts`)
+### 4.3 Utensil (`src/app/actions/utensil.ts`)
+
+`getListUtensils()` / `addUtensilAction(item)` / `updateUtensilAction(id, updates)` / `deleteUtensilAction(id)`
+
+### 4.4 Calendar (`src/app/actions/calendar.ts`)
+
+`getCalendarEntriesAction(year, month)` / `addCalendarEntryAction(entry)` / `completeEntryAction(id)` /
+`deleteCalendarEntryAction(id)` / `updateStockOnCookAction(updates[])` /
+`getRecipesForCalendar()` / `getRecipeDetailForCalendar(id)`
+
+### 4.5 Recommend (`src/app/actions/recommend.ts`)
 
 | 函数 | 说明 |
 |------|------|
-| `getCalendarEntries(month)` | 月视图查询 |
-| `addCalendarEntry({date, recipe_id, status?, notes?})` | |
-| `completeEntry(entryId, stockUpdates)` | 标记完成 + 更新库存 |
-| `uploadCalendarPhoto(entryId, file)` | |
-
-### 4.6 Recommend (`src/app/actions/recommend.ts`)
-
-| 函数 | 说明 |
-|------|------|
-| `getRecommendations(filters?)` | 调 tiering + scoring → 三档推荐 |
-| `generateShoppingList(recipeIds)` | 生成购物清单 |
-| `checkoutShoppingList(checkedItems[])` | 清单回填 → 库存变 enough |
+| `getRecommendations(filters?)` | 取 vault → `tierRecipes` → `scoreAndSort` |
+| `generateShoppingListAction(recipeIds[], includePlanned?)` | 生成购物清单 |
+| `checkoutShoppingListAction(inventoryIds[])` | 勾选回填为 enough |
 
 ---
 
 ## 5. A 层 Service 纯函数
 
-全部来自 `src/lib/services/`，形如 `fn(supabase, userId, args)`，同构可复用。
+全部来自 `src/lib/services/`，签名一律 `fn(vault, args)`，返回 `{data, error}`。
+**所有写函数第一行都是 `assertWritable(动作名)`**——只读沙盒在这里被挡下。
 
 ### Inventory Service
 
 ```
-listInventory(supabase, userId, category?)          → {data: InventoryItem[], error}
-addInventoryItem(supabase, userId, item)             → {data: InventoryItem, error}
-updateInventoryItem(supabase, userId, id, updates)   → {data: InventoryItem, error}
-deleteInventoryItem(supabase, userId, id)            → {error}
-batchUpdateStockLevel(supabase, userId, items[])     → {error}
-updateStockOnCook(supabase, userId, ids[], levels[]) → {error}
-markRestocked(supabase, userId, id)                   → {error}
-batchMarkRestocked(supabase, userId, ids[])           → {error}
+listInventory(vault, category?)              → {data: InventoryItem[], error}
+addInventoryItem(vault, item)                → {data: InventoryItem | null, error}
+updateInventoryItem(vault, id, updates)      → {data: InventoryItem | null, error}
+deleteInventoryItem(vault, id)               → {error}
+batchUpdateStockLevel(vault, items[])        → {error}
+updateStockOnCook(vault, updates[])          → {error}
+markRestocked(vault, id)                     → {data, error}
+batchMarkRestocked(vault, ids[])             → {error}
 ```
 
 ### Recipe Service
 
 ```
-listRecipes(supabase, userId, filters?)          → {data: Recipe[], error}
-getRecipeDetail(supabase, userId, recipeId)       → {data: RecipeDetail, error}
-createRecipe(supabase, userId, data)              → {data: Recipe, error}
-updateRecipe(supabase, userId, id, data)          → {data: Recipe, error}
-deleteRecipe(supabase, userId, id)                → {error}
-uploadRecipePhoto(supabase, userId, recipeId, f)  → {data: RecipePhoto, error}
-deleteRecipePhoto(supabase, userId, photoId)      → {error}
+listRecipes(vault, filters?)                 → {data: Recipe[], error}
+getRecipeDetail(vault, recipeId)             → {data: RecipeDetail | null, error}
+createRecipe(vault, data)                    → {data: Recipe | null, error}
+updateRecipe(vault, recipeId, data)          → {data: Recipe | null, error}
+deleteRecipe(vault, recipeId)                → {error}
+uploadRecipePhoto(vault, recipeId, file)     → {data: RecipePhoto | null, error}
+deleteRecipePhoto(vault, photoId)            → {error}
 ```
 
 ### Utensil Service
 
 ```
-listUtensils(supabase, userId)     → {data: Utensil[], error}
-addUtensil(supabase, userId, data) → {data: Utensil, error}
-deleteUtensil(supabase, userId, id) → {error}
+listUtensils(vault)                          → {data: Utensil[], error}
+addUtensil(vault, item)                      → {data: Utensil | null, error}
+updateUtensil(vault, id, updates)            → {data: Utensil | null, error}
+deleteUtensil(vault, id)                     → {error}
 ```
 
 ### Calendar Service
 
 ```
-getCalendarEntries(supabase, userId, month)          → {data: CalendarEntry[], error}
-addCalendarEntry(supabase, userId, data)              → {data: CalendarEntry, error}
-completeEntry(supabase, userId, entryId, updates)     → {error}
-uploadCalendarPhoto(supabase, userId, entryId, file)  → {data: CalendarPhoto, error}
+getCalendarEntries(vault, year, month)       → {data: (CalendarEntry & {recipe?})[], error}
+addCalendarEntry(vault, entry)               → {data: CalendarEntry | null, error}
+completeEntry(vault, entryId)                → {data: CalendarEntry | null, error}
+deleteCalendarEntry(vault, entryId)          → {error}
 ```
 
 ### Shopping Service
 
 ```
-generateShoppingList(supabase, userId, recipeIds[], includePlanned?)
-  → {data: ShoppingListItem[], error}
-  // 内部: 获取库存→筛缺食材→查厨具→自动加 low/out 调料主食→可选计划菜
-
-checkoutShoppingList(supabase, userId, checkedItems[])
-  → {error}
-  // 内部: 遍历 checkedItems → batchMarkRestocked()
+generateShoppingList(vault, recipeIds[], includePlanned?) → {data: ShoppingListItem[], error}
+checkoutShoppingList(vault, inventoryIds[])               → {error}
 ```
 
-### Seed Service
-
-```
-initUserFromSeed(serviceRoleSupabase, userId)
-  → {success, error?}
-  // 步骤:
-  //   1. 复制种子 inventory (215种) → 新 id，hash 混合档位
-  //   2. 复制种子 recipes (54道) → 新 id
-  //   3. 复制 recipe_utensils
-  //   4. 复制 recipe_ingredients + 外键重映射
-  // 注意: 使用 service_role client 绕过 RLS
-```
+购物清单是**算出来的**，不落盘：选中菜谱缺的料 + 缺的厨具 + low/out 的调料主食蛋奶
+（+ 可选：日历上计划中的菜）。回填时才写库存。
 
 ---
 
 ## 6. B 层推荐引擎
 
-> ⚠️ 二期整体删除，换 LLM。代码在 `src/lib/recommend/`。
+> 二期由 LLM **增强而非替换**——规则引擎保留为基线，无 API key 时产品完全可用。
+> 代码在 `src/lib/recommend/`。**本次本地化改造中这三个文件逻辑一行未改。**
 
 ### 配置常量 (`config.ts`)
 
@@ -391,6 +305,8 @@ export const RECOMMEND_CONFIG = {
 };
 ```
 
+> 用户可在 `data/kitchen/config.yaml` 里覆盖这些值，重启生效。缺字段的部分回落到上面的默认值。
+
 ### 分档 (`tiering.ts`)
 
 ```
@@ -411,14 +327,30 @@ scoreAndSort(recipes, context) → sorted by score desc
 
 ---
 
-## 7. Supabase Client 配置
+## 7. vault 数据层 (`src/lib/vault/`)
 
-| 文件 (`src/lib/supabase/`) | 类型 | 用途 |
-|---------------------------|------|------|
-| `browser.ts` | `createBrowserClient()` | Client Component |
-| `server.ts` | `createServerClient()` | Server Component / Server Action |
-| `middleware.ts` | `createServerClient()` | Middleware 路由守卫 |
-| `service-role.ts` | `createClient(service_role_key)` | 绕过 RLS（仅种子初始化） |
+| 文件 | 职责 |
+|------|------|
+| `paths.ts` | vault 根目录解析（`VAULT_PATH` / `./data`）、`isReadOnly()`、各文件路径 |
+| `init.ts` | 首次启动把 `seed/` 复制成 `data/`；只读模式直接用 `seed/` |
+| `reader.ts` | 全量解析进内存，产出 `Vault` |
+| `writer.ts` | 原子写 + 各实体的序列化；`assertWritable()` |
+| `schema.ts` | Zod schema + 报错翻译 |
+| `frontmatter.ts` | `.md` 的 frontmatter 拆分与拼装（**按行扫描，不用 `split('---', n)`**） |
+| `ulid.ts` | 26 字符 Crockford base32 ID |
+| `errors.ts` | `VaultError`（kind / file / line / field / hint） |
+| `store.ts` | 进程内单例 + **文件签名校验**：每次取用前比对「文件数 + 最新 mtime」（500ms 节流），变了就重读 |
+
+> `store.ts` 的签名校验是「你可以拿记事本改，刷新页面就生效」这个承诺的实现处。
+> 一个永不失效的缓存会让这条承诺变成谎言。
+
+配套的 `src/lib/utils/`：
+
+| 文件 | 职责 |
+|------|------|
+| `normalize-name.ts` | 食材名归一化（全半角 / 空格 / 别名表），`buildAliasMap()` 带冲突检测 |
+| `error.ts` | 错误分类（`vault_format` / `validation` / `io` / `read_only` / `unknown`）+ Server Action 外壳 |
+| `compress-image.ts` | 上传前浏览器内压缩（长边 1600px / JPEG 0.82），失败或压不小就用原图 |
 
 ---
 
@@ -430,6 +362,7 @@ scoreAndSort(recipes, context) → sorted by score desc
 | `ui-store.ts` | 侧边栏折叠等 UI 状态 | 否 |
 
 > Zustand 仅管 UI 状态，不做服务端数据缓存。
+> 只读状态走 React Context（`components/layout/read-only-provider.tsx`），由根布局从服务端注入。
 
 ---
 
@@ -437,121 +370,108 @@ scoreAndSort(recipes, context) → sorted by score desc
 
 ```
 cook-helper/
-├── DESIGN.md                    ← 高层设计
-├── SPEC.md                      ← 本文档
-├── PRD_v2.md                    ← 产品需求（参考）
-├── .env.local                   ← 环境变量（不提交 git）
-├── package.json
-├── tsconfig.json / next.config.ts / vitest.config.ts
+├── DESIGN.md / SPEC.md / README.md / CONTRIBUTING.md / LICENSE
+├── docs/
+│   ├── vault-format.md          ← ★ 数据文件格式规范
+│   ├── vault-examples/          ← 规范的样例文件
+│   └── recommend-algorithm.md
 │
-├── supabase/
-│   └── migrations/
-│       └── 20260705000000_initial_schema.sql
+├── seed/                        ← ★ 随仓库发布的种子 vault（进 git）
+│   ├── README.md                ←   种子怎么调、last_restocked_at 的坑
+│   └── kitchen/
+│       ├── recipes/{54 个菜谱目录}/recipe.md
+│       ├── inventory/{5 个分类}.yaml
+│       ├── utensils.yaml / aliases.yaml / config.yaml
+│       └── calendar/2026-07.yaml
+│
+├── data/                        ← 运行时 vault（.gitignore，首次启动自动生成）
 │
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx           ← 根布局 (ThemeProvider)
-│   │   ├── page.tsx             ← 根路由重定向
-│   │   ├── (auth)/
-│   │   │   ├── layout.tsx       ← 路由守卫 + AppLayout
-│   │   │   ├── recommend/page.tsx
-│   │   │   ├── inventory/page.tsx
-│   │   │   ├── utensils/page.tsx
-│   │   │   ├── recipes/page.tsx
-│   │   │   └── calendar/page.tsx
-│   │   ├── demo/
-│   │   │   ├── layout.tsx
-│   │   │   └── page.tsx          ← 5 Tab Demo (716行)
-│   │   ├── login/page.tsx
-│   │   ├── register/page.tsx     ← 8位 OTP (143行)
-│   │   └── actions/              ← Server Actions
-│   │       ├── auth.ts / inventory.ts / recipe.ts
-│   │       ├── utensil.ts / calendar.ts / recommend.ts
+│   │   ├── layout.tsx           ← 根布局（AppLayout + ReadOnlyProvider）
+│   │   ├── page.tsx             ← → /recommend
+│   │   ├── recommend/ inventory/ utensils/ recipes/ recipes/new/ calendar/
+│   │   ├── api/photo/route.ts   ← 照片读取（含越界防护）
+│   │   └── actions/             ← Server Actions
+│   │       └── inventory.ts / recipe.ts / utensil.ts / calendar.ts / recommend.ts
 │   │
 │   ├── components/
-│   │   ├── layout/               ← AppLayout, ThemeProvider, AntdRegistry
-│   │   └── shared/               ← 复用组件
+│   │   ├── layout/              ← AppLayout / ThemeProvider / AntdRegistry / ReadOnlyProvider
+│   │   ├── views/               ← Recommend / Inventory / Utensils / Calendar 视图
+│   │   ├── recommend/           ← HeroCard / AltCard / ShoppingPanel / FilterPopover / …
+│   │   ├── recipes/             ← WaterfallCard
+│   │   └── shared/              ← RecipeDetailModal / EmptyState / PageHeader / StatusDot / …
 │   │
 │   ├── lib/
-│   │   ├── supabase/             ← browser / server / middleware / service-role
-│   │   ├── services/             ← ★ A 层纯函数
-│   │   │   ├── inventory/ + __tests__/
-│   │   │   ├── recipe/ / utensil/ / calendar/
-│   │   │   ├── shopping/ + __tests__/
-│   │   │   └── seed/initUser.ts + __tests__/
-│   │   ├── recommend/            ← ★ B 层 (二期删)
-│   │   │   ├── config.ts / tiering.ts / scoring.ts / index.ts
-│   │   │   └── __tests__/
-│   │   ├── seed/
-│   │   │   ├── seed-data.ts      ← 54菜 + 215食材
-│   │   │   └── fixtures.ts       ← Demo用 12菜
-│   │   ├── constants/text.ts     ← 文案集中
-│   │   └── utils/
+│   │   ├── vault/               ← ★ 数据层（见 §7）+ __tests__/
+│   │   ├── services/            ← ★ A 层纯函数
+│   │   │   ├── inventory/ + __tests__/    recipe/ + __tests__/
+│   │   │   ├── utensil/  calendar/        shopping/ + __tests__/
+│   │   ├── recommend/           ← ★ B 层：config / tiering / scoring + __tests__/
+│   │   ├── seed/__tests__/      ← 种子 vault 质量守门
+│   │   ├── constants/text.ts
+│   │   └── utils/               ← normalize-name / error / compress-image + __tests__/
 │   │
-│   ├── hooks/ / store/ / types/
-│   └── middleware.ts
+│   ├── store/ / types/
 │
-├── scripts/parse-howtocook.ts
-└── docs/recommend-algorithm.md
+└── scripts/parse-howtocook.ts   ← 从 HowToCook 仓库解析菜谱的参考工具
 ```
 
 ---
 
 ## 10. 部署流程
 
-### 10.1 环境变量
-
-```
-NEXT_PUBLIC_SUPABASE_URL          = https://<project-id>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY     = eyJh... (公开)
-SUPABASE_SERVICE_ROLE_KEY         = eyJh... (仅服务端，保密)
-```
-
-### 10.2 前置准备（一次性人工）
-
-| # | 平台 | 操作 |
-|---|------|------|
-| 1 | Supabase | 注册 → 新建项目 → 获取 3 个 key |
-| 2 | Resend | 注册 → API Key → 验证域名 wreathmoon.com（DNS TXT/MX） |
-| 3 | Supabase Auth | Settings → SMTP → 填 Resend 参数: smtp.resend.com:465, user:smtp, pass:API Key |
-| 4 | Supabase Auth | Templates → OTP 模板改为 6/8 位数字 |
-| 5 | Supabase Auth | 启用 email confirmations |
-| 6 | GitHub | 创建仓库 Wreathmoon/cook-helper → push |
-
-### 10.3 数据库初始化
+### 10.1 本地（主形态）
 
 ```bash
-supabase login
-supabase link --project-ref <ref-id>
-supabase db push
+git clone https://github.com/Wreathmoon/cook-helper.git
+cd cook-helper
+npm install
+npm run dev          # → http://localhost:7474
 ```
 
-### 10.4 Vercel 部署
+**没有第五步。** 不需要数据库、不需要 key、不需要任何环境变量。
 
-```bash
-# 1. vercel.com → Import GitHub repo
-# 2. 填入 3 个环境变量
-# 3. Framework: Next.js, Root: /
-# 4. Deploy → 访问 https://<project>.vercel.app
-# 5. Domains → 绑定 cook.wreathmoon.com → DNS CNAME → cname.vercel-dns.com
-```
+| 环境变量 | 默认 | 作用 |
+|---------|------|------|
+| `VAULT_PATH` | `./data` | vault 位置，可指到 iCloud / Dropbox 目录 |
+| `READ_ONLY` | 未设 | 设为 `1` 时所有写入被优雅拒绝 |
 
-### 10.5 验证清单
+### 10.2 只读沙盒（Vercel）
+
+同一份代码，加一个环境变量：
+
+| # | 操作 |
+|---|------|
+| 1 | vercel.com → Import GitHub repo |
+| 2 | Environment Variables 加 `READ_ONLY=1` |
+| 3 | Framework: Next.js，Root: `/` |
+| 4 | Deploy → Domains 绑定 `cook.wreathmoon.com`（DNS CNAME → cname.vercel-dns.com） |
+
+Vercel 的文件系统是只读的，`ensureVaultInitialized()` 在只读模式下直接读仓库里的
+`seed/`，不尝试复制。重启即重置。
+
+### 10.3 验证清单
 
 ```
 本地:
-  npm run build     # 编译无错误
-  npm run test      # 39 tests 全绿
+  npm run build            # 编译无错误（含 TypeScript 全量检查）
+  npx vitest run           # 94 tests 全绿
+  npm run lint             # 0 error
 
-线上:
-  1. https://cook.wreathmoon.com → 重定向 /demo
-  2. /demo → 5 Tab 可用，写入禁用
-  3. /register → 收 OTP → /recommend 有 50+ 菜
-  4. /inventory → CRUD + 批量更新
-  5. /recipes → 标签筛选 + 照片
-  6. /recommend → 改库存→推荐变→购物清单→回填
-  7. /calendar → 记录/规划/做完更新
+功能:
+  1. rm -rf data && npm run dev → 首页三档都有菜，无任何配置步骤
+  2. /inventory 点档位 → data/kitchen/inventory/*.yaml 立刻变化，无 .tmp 残留
+  3. 用编辑器手改 stock_level → 刷新页面数字随之变化
+  4. 故意把 yaml 缩进改成 Tab → 报错指明文件与行号
+  5. /recipes → 标签筛选 + 详情弹窗 + 加照片
+  6. /recommend → 改库存 → 推荐变 → 购物清单 → 回填
+  7. /calendar → 记录 / 规划 / 做完更新库存
   8. 主题切换
+
+只读沙盒:
+  9. READ_ONLY=1 npx next dev → 顶部出现只读横幅
+ 10. 任何写操作被拒绝且 seed/ 文件校验和不变
 ```
 
 ---
@@ -560,28 +480,40 @@ supabase db push
 
 | 文件 | 覆盖 | 用例 |
 |------|------|:--:|
-| `services/inventory/__tests__/` | 库存 CRUD、档位更新、回填 | ~10 |
-| `services/seed/__tests__/` | 种子复制 + 外键重映射 | ~8 |
-| `services/shopping/__tests__/` | 购物清单生成 + 回填 | ~8 |
-| `recommend/__tests__/tiering.test.ts` | 硬分档规则 | ~7 |
-| `recommend/__tests__/scoring.test.ts` | 档内评分 | ~6 |
-| **合计** | | **39** |
+| `recommend/__tests__/tiering.test.ts` | 硬分档规则 | 10 |
+| `recommend/__tests__/scoring.test.ts` | 档内评分 | 8 |
+| `vault/__tests__/read-only.test.ts` | 只读模式拒绝写入且不落盘 | 5 |
+| `utils/__tests__/normalize-name.test.ts` | 归一化 + 别名 + 冲突检测 + 种子别名表质量 | 19 |
+| `utils/__tests__/error.test.ts` | 错误分类 + Server Action 外壳 | 11 |
+| `services/inventory/__tests__/` | 库存 CRUD、档位、回填（喂数组 + 真实落盘） | 17 |
+| `services/shopping/__tests__/` | 购物清单生成 + 回填 | 9 |
+| `services/recipe/__tests__/photo.test.ts` | 照片落盘 / 删除 / frontmatter 同步 | 4 |
+| `seed/__tests__/seed-vault.test.ts` | 种子数据质量 + 首屏三档质量 | 11 |
+| **合计** | | **94** |
 
 运行: `npx vitest run`
+
+> ⚠️ **18 个推荐引擎测试（tiering 10 + scoring 8）是这个项目核心价值的回归基准。**
+> 它们完全独立于数据层——换数据层前后必须逐字未改且全绿。
+> 如果你发现「得改这些测试才能过」，那说明你正在改变推荐行为，停下来先想清楚。
 
 ---
 
 ## 12. 种子数据
 
-| 数据集 | 数量 | 用途 |
+`seed/` 目录，随仓库发布，首次启动整个复制成 `data/`。
+
+| 数据集 | 数量 | 说明 |
 |--------|:---:|------|
-| 种子菜谱 | 54 | 注册自动复制 |
-| 种子食材 | 215 | 注册自动复制 |
-| Demo 菜谱 | 12 | `/demo` 展示 |
-| Demo 食材 | 20 | `/demo` 展示（含 enough/low/out 混合） |
-| Demo 厨具 | 5 | `/demo` 展示 |
-| Demo 日历 | 5 | `/demo` 展示 (2 completed + 3 planned) |
+| 菜谱 | 54 | 一菜一目录，含步骤与 Tips |
+| 食材 | 49 | 5 个分类；档位**手工调**，保证三档推荐都有内容 |
+| 厨具 | 4 | 炒锅 / 煮锅 / 蒸锅 / 电饭煲 |
+| 日历 | 4 | 3 条已完成 + 1 条计划中 |
+| 别名 | 40+ | 「番茄 = 西红柿」等 |
+
+档位不用 hash 生成——那样首屏推荐质量是碰运气的。调整规则与那个
+`last_restocked_at` 的坑见 [seed/README.md](./seed/README.md)。
 
 ---
 
-> **本文档与代码同步维护。架构变更见 [DESIGN.md](./DESIGN.md)。**
+> **本文档与代码同步维护。架构变更见 [DESIGN.md](./DESIGN.md)，数据格式见 [docs/vault-format.md](./docs/vault-format.md)。**

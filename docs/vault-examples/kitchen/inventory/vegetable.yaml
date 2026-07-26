@@ -1,0 +1,21 @@
+# 蔬菜类库存 — 按名称排序
+- name: 白菜
+  stock_level: enough
+  last_restocked_at: 2026-07-23
+
+- name: 黄瓜
+  stock_level: out
+
+- name: 青椒
+  stock_level: low
+  note: 只剩两个了
+
+- name: 土豆
+  total_amount: 500g
+  stock_level: low
+  unit: g
+  last_restocked_at: 2026-07-18
+  note: 有点发芽了
+
+- name: 西红柿
+  stock_level: out

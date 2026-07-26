@@ -1,0 +1,10 @@
+# 蛋奶豆制品库存 — 按名称排序
+- name: 豆腐
+  stock_level: low
+  last_restocked_at: 2026-07-24
+
+- name: 鸡蛋
+  total_amount: 6个
+  stock_level: enough
+  unit: 个
+  last_restocked_at: 2026-07-26
