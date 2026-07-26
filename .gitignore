@@ -48,6 +48,9 @@ Task/
 # 设计过程文件（含已过期的 PRD 与第三方生成产物），仅本地保留
 claude design/
 
+# Claude Code 本地个人配置（共享配置请放 .claude/settings.json）
+.claude/settings.local.json
+
 # hermes agent local state
 .hermes/
 .worktrees/
