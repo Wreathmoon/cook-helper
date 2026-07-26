@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -40,11 +41,12 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# project blueprint docs (local AI agent reference, not for public repo)
-DESIGN.md
-SPEC.md
+# project blueprint docs — DESIGN/SPEC 已入库，路线图与任务仅本地保留
 FUTURE.md
 Task/
+
+# 设计过程文件（含已过期的 PRD 与第三方生成产物），仅本地保留
+claude design/
 
 # hermes agent local state
 .hermes/
