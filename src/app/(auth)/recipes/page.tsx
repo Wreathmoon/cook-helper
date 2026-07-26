@@ -9,10 +9,10 @@ import { getListRecipes, deleteRecipeAction, getRecipeDetailAction } from '@/app
 import { getCalendarEntriesAction } from '@/app/actions/calendar';
 import type { Recipe } from '@/types';
 import { PageHeader } from '@/components/shared/PageHeader';
-import { StatusDot, type StatusDotStatus } from '@/components/shared/StatusDot';
 import { FilterChips } from '@/components/shared/FilterChips';
 import { SkeletonCard } from '@/components/shared/SkeletonCard';
 import { RecipeDetailModal } from '@/components/shared/RecipeDetailModal';
+import { WaterfallCard } from '@/components/recipes';
 
 const METHOD_OPTIONS = [
   { label: '全部', value: '' },
@@ -30,68 +30,6 @@ const SPICY_OPTIONS = [
   { label: '微辣', value: '微辣' },
   { label: '中辣', value: '中辣' },
 ];
-
-function WaterfallCard({
-  recipe,
-  missingCount,
-  cookCount,
-  onClick,
-}: {
-  recipe: Recipe;
-  missingCount: number | null;
-  cookCount: number;
-  onClick: () => void;
-}) {
-  const imgHeight = 92 + ((recipe.id.length * 7) % 61);
-  const methods = recipe.attributes?.method || [];
-  const desc = recipe.attributes?.flavor || recipe.attributes?.cuisine || methods.join('、') || '家常美味';
-
-  const status: StatusDotStatus = missingCount === null ? 'notice' : missingCount === 0 ? 'good' : 'warn';
-  const statusText = missingCount === null ? '加载中...' : missingCount === 0 ? '食材全齐' : `缺${missingCount}样`;
-
-  return (
-    <div
-      onClick={onClick}
-      className="card-hover"
-      style={{
-        breakInside: 'avoid',
-        marginBottom: 10,
-        borderRadius: 14,
-        background: 'var(--panel)',
-        border: '1px solid var(--line)',
-        overflow: 'hidden',
-        cursor: 'pointer',
-      }}
-    >
-      <div
-        style={{
-          height: imgHeight,
-          background: 'linear-gradient(135deg, var(--primary-soft), var(--hover))',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'var(--tx2)', fontSize: 11,
-        }}
-      >
-        菜品照
-      </div>
-      <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {recipe.name}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--tx2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {desc}
-        </div>
-        <div style={{ height: 1, background: 'var(--line2)', margin: '4px 0' }} />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <StatusDot status={status} />
-            <span style={{ color: 'var(--tx2)' }}>{statusText}</span>
-          </div>
-          <span style={{ color: 'var(--tx2)' }}>做过{cookCount}次</span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
