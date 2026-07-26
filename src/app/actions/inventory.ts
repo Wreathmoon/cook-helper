@@ -1,6 +1,5 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
 import {
   listInventory,
   addInventoryItem,
@@ -8,16 +7,15 @@ import {
   deleteInventoryItem,
   batchUpdateStockLevel,
 } from '@/lib/services/inventory';
+import { getVault } from '@/lib/vault';
+import { guardData, guardResult } from '@/lib/utils/error';
+import type { InventoryCategory, InventoryItem, StockLevel } from '@/types';
 import { revalidatePath } from 'next/cache';
 
 export async function getListInventory(category?: string) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  const result = await listInventory(supabase, user.id, category as any);
-  return result;
+  return guardData([] as InventoryItem[], () =>
+    listInventory(getVault(), category as InventoryCategory | undefined)
+  );
 }
 
 export async function addInventoryItemAction(item: {
@@ -28,53 +26,42 @@ export async function addInventoryItemAction(item: {
   unit?: string;
   note?: string;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  const result = await addInventoryItem(supabase, user.id, item as any);
+  const result = await guardResult(
+    () =>
+      addInventoryItem(getVault(), {
+        ...item,
+        category: item.category as InventoryCategory,
+        stock_level: item.stock_level as StockLevel | undefined,
+      }),
+    { data: null }
+  );
   revalidatePath('/inventory');
   return result;
 }
 
-export async function updateInventoryItemAction(
-  id: string,
-  updates: Record<string, unknown>
-) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  const result = await updateInventoryItem(supabase, user.id, id, updates as any);
+export async function updateInventoryItemAction(id: string, updates: Record<string, unknown>) {
+  const result = await guardResult(
+    () =>
+      updateInventoryItem(
+        getVault(),
+        id,
+        updates as Partial<Omit<InventoryItem, 'id' | 'created_at' | 'updated_at'>>
+      ),
+    { data: null }
+  );
   revalidatePath('/inventory');
   return result;
 }
 
 export async function deleteInventoryItemAction(id: string) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  const result = await deleteInventoryItem(supabase, user.id, id);
+  const result = await guardResult(() => deleteInventoryItem(getVault(), id));
   revalidatePath('/inventory');
   return result;
 }
 
-export async function batchUpdateStockLevelAction(
-  items: { id: string; stock_level: string }[]
-) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  const result = await batchUpdateStockLevel(
-    supabase,
-    user.id,
-    items as any
+export async function batchUpdateStockLevelAction(items: { id: string; stock_level: string }[]) {
+  const result = await guardResult(() =>
+    batchUpdateStockLevel(getVault(), items as { id: string; stock_level: StockLevel }[])
   );
   revalidatePath('/inventory');
   return result;

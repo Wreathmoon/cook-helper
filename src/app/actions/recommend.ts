@@ -1,14 +1,15 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
 import { listInventory } from '@/lib/services/inventory';
-import { listRecipes, getRecipeDetail } from '@/lib/services/recipe';
+import { listRecipes } from '@/lib/services/recipe';
 import { listUtensils } from '@/lib/services/utensil';
 import { getCalendarEntries } from '@/lib/services/calendar';
 import { tierRecipes } from '@/lib/recommend/tiering';
 import { scoreAndSort } from '@/lib/recommend/scoring';
 import { generateShoppingList, checkoutShoppingList } from '@/lib/services/shopping';
-import type { CalendarEntry, ShoppingListItem } from '@/types';
+import { getVault } from '@/lib/vault';
+import { guardData, guardResult } from '@/lib/utils/error';
+import type { CalendarEntry, RecommendedRecipe, ShoppingListItem } from '@/types';
 
 export async function getRecommendations(filters?: {
   maxCookTime?: number;
@@ -16,87 +17,53 @@ export async function getRecommendations(filters?: {
   dietType?: string;
   method?: string[];
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
+  return guardData([] as RecommendedRecipe[], async () => {
+    const vault = getVault();
+    const now = new Date();
 
-  // 获取所有数据
-  const now = new Date();
-  const [inventoryRes, recipesRes, utensilsRes, calendarRes] = await Promise.all([
-    listInventory(supabase, user.id),
-    listRecipes(supabase, user.id),
-    listUtensils(supabase, user.id),
-    getCalendarEntries(supabase, user.id, now.getFullYear(), now.getMonth() + 1),
-  ]);
+    const [inventoryRes, recipesRes, utensilsRes, calendarRes] = await Promise.all([
+      listInventory(vault),
+      listRecipes(vault),
+      listUtensils(vault),
+      getCalendarEntries(vault, now.getFullYear(), now.getMonth() + 1),
+    ]);
 
-  // 获取所有菜谱的食材关联和厨具关联
-  const recipeIngredients = new Map<
-    string,
-    { inventory_id: string; role: string; amount?: string }[]
-  >();
-  const recipeUtensils = new Map<string, string[]>();
+    // 食材与厨具的关联已经在 vault 加载时建好了，不需要再逐菜谱查一遍。
+    // 注意：recipeIngredients 里的 inventory_id 装的是**归一化后的食材名称**，
+    // 而 InventoryItem.id 同样是归一化名称——推荐引擎因此一行都不用改
+    // （见 src/lib/vault/reader.ts 的 §关联键）。
+    const tiered = tierRecipes({
+      recipes: recipesRes.data,
+      inventory: inventoryRes.data,
+      utensils: utensilsRes.data,
+      calendarEntries: calendarRes.data as CalendarEntry[],
+      recipeIngredients: vault.recipeIngredients,
+      recipeUtensils: vault.recipeUtensils,
+    });
 
-  for (const recipe of recipesRes.data) {
-    const detail = await getRecipeDetail(supabase, user.id, recipe.id);
-    if (detail.data) {
-      recipeIngredients.set(
-        recipe.id,
-        detail.data.ingredients.map((i) => ({
-          inventory_id: i.inventory_id,
-          role: i.role,
-          amount: i.amount ?? undefined,
-        }))
-      );
-      recipeUtensils.set(
-        recipe.id,
-        detail.data.utensils.map((u) => u.utensil_name)
-      );
-    }
-  }
+    const scored = scoreAndSort({
+      tieredRecipes: tiered,
+      calendarEntries: calendarRes.data as CalendarEntry[],
+      inventory: inventoryRes.data,
+      recipeIngredients: vault.recipeIngredients,
+      userFilters: filters,
+    });
 
-  // 第一层：硬分档
-  const tiered = tierRecipes({
-    recipes: recipesRes.data,
-    inventory: inventoryRes.data,
-    utensils: utensilsRes.data,
-    calendarEntries: calendarRes.data as CalendarEntry[],
-    recipeIngredients,
-    recipeUtensils,
+    return { data: scored, error: null };
   });
-
-  // 第二层：档内评分
-  const scored = scoreAndSort({
-    tieredRecipes: tiered,
-    calendarEntries: calendarRes.data as CalendarEntry[],
-    inventory: inventoryRes.data,
-    recipeIngredients,
-    userFilters: filters,
-  });
-
-  return { data: scored, error: null };
 }
 
 export async function generateShoppingListAction(
   selectedRecipeIds: string[],
   includePlannedRecipes: boolean = false
 ): Promise<{ data: ShoppingListItem[]; error: string | null }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  return generateShoppingList(supabase, user.id, selectedRecipeIds, includePlannedRecipes);
+  return guardData([] as ShoppingListItem[], () =>
+    generateShoppingList(getVault(), selectedRecipeIds, includePlannedRecipes)
+  );
 }
 
 export async function checkoutShoppingListAction(
   checkedInventoryIds: string[]
 ): Promise<{ error: string | null }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  return checkoutShoppingList(supabase, user.id, checkedInventoryIds);
+  return guardResult(() => checkoutShoppingList(getVault(), checkedInventoryIds));
 }

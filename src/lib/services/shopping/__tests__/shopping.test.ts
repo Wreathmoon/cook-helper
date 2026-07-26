@@ -1,140 +1,140 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { generateShoppingList, checkoutShoppingList } from '../index';
+import { makeTestVault } from '@/lib/vault/__tests__/make-test-vault';
 
-// ── mock Supabase client（支持多表查询）────────────────────
-function createMockSupabase(tableResponses: Record<string, any> = {}) {
-  const mockChain: any = {};
-  const methods = ['select', 'insert', 'update', 'delete', 'eq', 'in', 'order', 'gte', 'lt', 'contains', 'ilike'];
+let vault: ReturnType<typeof makeTestVault>;
 
-  for (const method of methods) {
-    mockChain[method] = vi.fn().mockReturnValue(mockChain);
-  }
-
-  // single() 和 thenable 根据表名返回不同数据
-  mockChain.single = vi.fn().mockImplementation(() => {
-    return Promise.resolve({ data: null, error: null });
-  });
-
-  // 使其可 await — 根据最近 from() 调用的表名返回数据
-  let currentTable = '';
-  const originalFrom = vi.fn().mockImplementation((table: string) => {
-    currentTable = table;
-    return mockChain;
-  });
-
-  // then 使其可 await — 直接 resolve 数据
-  mockChain.then = vi.fn().mockImplementation((onFulfilled: any) => {
-    const data = tableResponses[currentTable] || [];
-    onFulfilled({ data, error: null });
-    return mockChain;
-  });
-
-  return {
-    from: originalFrom,
-    auth: {
-      getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'test-user' } } }),
-    },
-    _chain: mockChain,
-    _tableResponses: tableResponses,
-  } as any;
-}
+afterEach(() => vault?.cleanup());
 
 describe('generateShoppingList', () => {
   it('stock_level=out 的食材出现在购物清单', async () => {
-    const inventoryData = [
-      { id: 'i1', name: '西红柿', category: 'vegetable', stock_level: 'enough' },
-      { id: 'i2', name: '牛肉', category: 'meat', stock_level: 'out' },
-    ];
-    const recipeIngredientsData = [
-      { inventory_id: 'i1', amount: '2个', recipes: { name: '番茄炒蛋' } },
-      { inventory_id: 'i2', amount: '300g', recipes: { name: '番茄炒蛋' } },
-    ];
-
-    const supabase = createMockSupabase({
-      inventory: inventoryData,
-      recipe_ingredients: recipeIngredientsData,
-      recipe_utensils: [],
-      utensils: [],
-      calendar_entries: [],
+    vault = makeTestVault({
+      inventory: [
+        { name: '西红柿', category: 'vegetable', stock_level: 'enough' },
+        { name: '牛肉', category: 'meat', stock_level: 'out' },
+      ],
+      recipes: [
+        {
+          id: 'r1',
+          name: '番茄炒牛肉',
+          ingredients: [
+            { name: '西红柿', amount: '2个' },
+            { name: '牛肉', amount: '300g' },
+          ],
+        },
+      ],
     });
 
-    const result = await generateShoppingList(supabase, 'u1', ['r1']);
+    const result = await generateShoppingList(vault, ['r1']);
 
-    // 牛肉 stock_level=out 应该出现在清单中
-    const beefItem = result.data.find(i => i.name === '牛肉');
-    expect(beefItem).toBeDefined();
-    expect(beefItem?.category).toBe('meat');
-    expect(beefItem?.inventoryId).toBe('i2');
+    const beef = result.data.find((i) => i.name === '牛肉');
+    expect(beef).toBeDefined();
+    expect(beef?.category).toBe('meat');
+    expect(beef?.inventoryId).toBe('牛肉');
+    expect(beef?.source).toBe('番茄炒牛肉');
+    expect(beef?.suggestedAmount).toBe('300g');
+    // enough 的不该进清单
+    expect(result.data.find((i) => i.name === '西红柿')).toBeUndefined();
   });
 
-  it('low/out 的调料/主食/蛋奶自动添加到清单', async () => {
-    const inventoryData = [
-      { id: 'i1', name: '盐', category: 'seasoning', stock_level: 'low' },
-      { id: 'i2', name: '大米', category: 'staple', stock_level: 'out' },
-      { id: 'i3', name: '鸡蛋', category: 'egg_dairy_bean', stock_level: 'low' },
-      { id: 'i4', name: '西红柿', category: 'vegetable', stock_level: 'low' }, // 蔬菜不自动添加
-    ];
-
-    const supabase = createMockSupabase({
-      inventory: inventoryData,
-      recipe_ingredients: [],
-      recipe_utensils: [],
-      utensils: [],
+  it('low/out 的调料/主食/蛋奶自动添加，蔬菜不自动添加', async () => {
+    vault = makeTestVault({
+      inventory: [
+        { name: '盐', category: 'seasoning', stock_level: 'low' },
+        { name: '大米', category: 'staple', stock_level: 'out' },
+        { name: '鸡蛋', category: 'egg_dairy_bean', stock_level: 'low' },
+        { name: '西红柿', category: 'vegetable', stock_level: 'low' },
+      ],
     });
 
-    const result = await generateShoppingList(supabase, 'u1', []);
+    const result = await generateShoppingList(vault, []);
 
-    // 调料/主食/蛋奶 low/out 应出现
-    expect(result.data.find(i => i.name === '盐')).toBeDefined();
-    expect(result.data.find(i => i.name === '大米')).toBeDefined();
-    expect(result.data.find(i => i.name === '鸡蛋')).toBeDefined();
-    // 蔬菜 low 不应自动出现（没有选中菜谱需要它）
-    expect(result.data.find(i => i.name === '西红柿')).toBeUndefined();
+    expect(result.data.find((i) => i.name === '盐')).toBeDefined();
+    expect(result.data.find((i) => i.name === '大米')).toBeDefined();
+    expect(result.data.find((i) => i.name === '鸡蛋')).toBeDefined();
+    expect(result.data.find((i) => i.name === '西红柿')).toBeUndefined();
   });
 
-  it('不重复添加已有 inventoryId 的项', async () => {
-    const inventoryData = [
-      { id: 'i1', name: '盐', category: 'seasoning', stock_level: 'out' },
-    ];
-    // recipe_ingredients 里也引用了 i1（盐），且 stock_level=out
-    const recipeIngredientsData = [
-      { inventory_id: 'i1', amount: '适量', recipes: { name: '炒菜' } },
-    ];
-
-    const supabase = createMockSupabase({
-      inventory: inventoryData,
-      recipe_ingredients: recipeIngredientsData,
-      recipe_utensils: [],
-      utensils: [],
+  it('同一样食材不重复出现', async () => {
+    vault = makeTestVault({
+      inventory: [{ name: '盐', category: 'seasoning', stock_level: 'out' }],
+      recipes: [{ id: 'r1', name: '炒菜', ingredients: [{ name: '盐', role: 'seasoning' }] }],
     });
 
-    const result = await generateShoppingList(supabase, 'u1', ['r1']);
+    const result = await generateShoppingList(vault, ['r1']);
+    expect(result.data.filter((i) => i.name === '盐')).toHaveLength(1);
+  });
 
-    // 盐只应出现一次
-    const saltItems = result.data.filter(i => i.name === '盐');
-    expect(saltItems.length).toBe(1);
+  it('菜谱要用但没有的厨具也进清单', async () => {
+    vault = makeTestVault({
+      inventory: [{ name: '鸡蛋', category: 'egg_dairy_bean', stock_level: 'enough' }],
+      utensils: ['炒锅'],
+      recipes: [
+        { id: 'r1', name: '蒸蛋羹', ingredients: [{ name: '鸡蛋' }], utensils: ['蒸锅', '炒锅'] },
+      ],
+    });
+
+    const result = await generateShoppingList(vault, ['r1']);
+    expect(result.data.map((i) => i.name)).toContain('蒸锅');
+    expect(result.data.map((i) => i.name)).not.toContain('炒锅');
+  });
+
+  it('库存里根本没有的食材，用菜谱里的名字进清单', async () => {
+    vault = makeTestVault({
+      inventory: [],
+      recipes: [{ id: 'r1', name: '啤酒鸭', ingredients: [{ name: '鸭' }] }],
+    });
+
+    const result = await generateShoppingList(vault, ['r1']);
+    expect(result.data.map((i) => i.name)).toContain('鸭');
+  });
+
+  it('别名会被归一：菜谱写「番茄」也能对上库存里的「西红柿」', async () => {
+    vault = makeTestVault({
+      aliases: new Map([['番茄', '西红柿']]),
+      inventory: [{ name: '西红柿', category: 'vegetable', stock_level: 'out' }],
+      recipes: [{ id: 'r1', name: '番茄炒蛋', ingredients: [{ name: '番茄' }] }],
+    });
+
+    const result = await generateShoppingList(vault, ['r1']);
+    const items = result.data.filter((i) => i.inventoryId === '西红柿');
+    expect(items).toHaveLength(1);
+    expect(items[0].name).toBe('西红柿');
+  });
+
+  it('includePlannedRecipes 会把日历上计划中的菜也算进来', async () => {
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    vault = makeTestVault({
+      inventory: [{ name: '牛肉', category: 'meat', stock_level: 'out' }],
+      recipes: [{ id: 'r1', name: '红烧牛肉', ingredients: [{ name: '牛肉' }] }],
+      calendar: [{ id: 'c1', date: tomorrow, recipe_id: 'r1', status: 'planned' }],
+    });
+
+    const without = await generateShoppingList(vault, [], false);
+    expect(without.data.find((i) => i.name === '牛肉')).toBeUndefined();
+
+    const with_ = await generateShoppingList(vault, [], true);
+    expect(with_.data.find((i) => i.name === '牛肉')?.source).toBe('计划: 红烧牛肉');
   });
 });
 
 describe('checkoutShoppingList', () => {
-  it('调用 batchMarkRestocked 进行回填', async () => {
-    const supabase = createMockSupabase();
+  it('勾选的食材被回填为 enough', async () => {
+    vault = makeTestVault({
+      inventory: [
+        { name: '盐', category: 'seasoning', stock_level: 'out' },
+        { name: '大米', category: 'staple', stock_level: 'low' },
+      ],
+    });
 
-    const result = await checkoutShoppingList(supabase, 'u1', ['i1', 'i2']);
-
-    // checkoutShoppingList 内部调用 batchMarkRestocked
-    // batchMarkRestocked 对每个 id 调用 update
-    expect(supabase.from).toHaveBeenCalledWith('inventory');
+    const result = await checkoutShoppingList(vault, ['盐', '大米']);
     expect(result.error).toBeNull();
+    expect(vault.inventory.every((i) => i.stock_level === 'enough')).toBe(true);
   });
 
   it('空列表直接返回成功', async () => {
-    const supabase = createMockSupabase();
-
-    const result = await checkoutShoppingList(supabase, 'u1', []);
-
+    vault = makeTestVault({ inventory: [] });
+    const result = await checkoutShoppingList(vault, []);
     expect(result.error).toBeNull();
-    // 不应调用任何数据库操作
-    expect(supabase.from).not.toHaveBeenCalled();
   });
 });

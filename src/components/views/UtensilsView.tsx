@@ -4,6 +4,8 @@ import { useState, useMemo } from 'react';
 import { Modal, Form, Input, Select, message, Button } from 'antd';
 import type { Utensil } from '@/types';
 import { StatusDot } from '@/components/shared/StatusDot';
+import { EmptyState } from '@/components/shared/EmptyState';
+import { useReadOnly, READ_ONLY_TIP } from '@/components/layout/read-only-provider';
 
 const CATEGORIES: { key: string; label: string }[] = [
   { key: 'all', label: '全部' },
@@ -37,8 +39,12 @@ export function UtensilsView({
   onAdd,
   onEdit,
   onDelete,
-  readOnly,
+  readOnly: readOnlyProp,
 }: UtensilsViewProps) {
+  // 页面不必逐个传：只读状态从根布局的 ReadOnlyProvider 兜底。
+  // hook 必须无条件调用，不能写成 `readOnlyProp ?? useReadOnly()`——`??` 会短路掉它
+  const contextReadOnly = useReadOnly();
+  const readOnly = readOnlyProp ?? contextReadOnly;
   const [activeCat, setActiveCat] = useState<string>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Utensil | null>(null);
@@ -61,12 +67,12 @@ export function UtensilsView({
   );
 
   const openAdd = () => {
-    if (readOnly) { message.info('请登录后添加厨具'); return; }
+    if (readOnly) { message.info(READ_ONLY_TIP); return; }
     setEditing(null); form.resetFields(); setModalOpen(true);
   };
 
   const openEdit = (item: Utensil) => {
-    if (readOnly) { message.info('请登录后编辑'); return; }
+    if (readOnly) { message.info(READ_ONLY_TIP); return; }
     setEditing(item);
     form.setFieldsValue({ name: item.name, category: item.category || '其他', note: item.note || '' });
     setModalOpen(true);
@@ -124,7 +130,13 @@ export function UtensilsView({
 
           <div style={{ flex: '1 1 460px', minWidth: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
             {visibleItems.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 60, fontSize: 13, color: 'var(--tx2)' }}>暂无厨具</div>
+              <EmptyState
+                icon="🍳"
+                title="还没登记厨具"
+                description="登记了厨具，推荐才知道哪些菜你做不了——没有蒸锅就不该给你推蒸菜。填一次，长期有效。"
+                actionLabel={readOnly ? undefined : '＋ 添加厨具'}
+                onAction={readOnly ? undefined : openAdd}
+              />
             ) : (
               <div style={{ width: '100%' }}>
                 <div style={{ display: 'flex', background: 'var(--hover)', fontSize: 11.5, color: 'var(--tx2)', fontWeight: 600, borderBottom: '1px solid var(--line)' }}>

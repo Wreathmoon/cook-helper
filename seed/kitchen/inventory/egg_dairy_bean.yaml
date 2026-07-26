@@ -1,0 +1,12 @@
+# egg_dairy_bean 库存 — 按名称排序
+- name: 豆腐
+  stock_level: enough
+  unit: 块
+  last_restocked_at: 2026-07-01
+- name: 豆干
+  stock_level: low
+  unit: 块
+- name: 鸡蛋
+  total_amount: 10 个
+  stock_level: enough
+  unit: 个

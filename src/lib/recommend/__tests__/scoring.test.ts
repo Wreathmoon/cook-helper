@@ -7,7 +7,6 @@ const day = 86400000;
 function makeRecipe(id: string, name: string, overrides: Partial<Recipe> = {}): Recipe {
   return {
     id,
-    user_id: 'u1',
     name,
     steps: null,
     cook_time_minutes: null,
@@ -30,8 +29,8 @@ describe('scoreAndSort', () => {
     const r2 = makeRecipe('r2', '昨天做的菜');
 
     const calendar: CalendarEntry[] = [
-      { id: 'c1', user_id: 'u1', date: new Date(Date.now() - 30 * day).toISOString().split('T')[0], recipe_id: 'r1', status: 'completed', notes: null, created_at: '', updated_at: '' },
-      { id: 'c2', user_id: 'u1', date: new Date(Date.now() - 1 * day).toISOString().split('T')[0], recipe_id: 'r2', status: 'completed', notes: null, created_at: '', updated_at: '' },
+      { id: 'c1', date: new Date(Date.now() - 30 * day).toISOString().split('T')[0], recipe_id: 'r1', status: 'completed', notes: null, created_at: '', updated_at: '' },
+      { id: 'c2', date: new Date(Date.now() - 1 * day).toISOString().split('T')[0], recipe_id: 'r2', status: 'completed', notes: null, created_at: '', updated_at: '' },
     ];
 
     const result = scoreAndSort({
@@ -51,7 +50,7 @@ describe('scoreAndSort', () => {
     const r2 = makeRecipe('r2', '做过几次');
 
     const calendar: CalendarEntry[] = [
-      { id: 'c1', user_id: 'u1', date: new Date(Date.now() - 5 * day).toISOString().split('T')[0], recipe_id: 'r2', status: 'completed', notes: null, created_at: '', updated_at: '' },
+      { id: 'c1', date: new Date(Date.now() - 5 * day).toISOString().split('T')[0], recipe_id: 'r2', status: 'completed', notes: null, created_at: '', updated_at: '' },
     ];
 
     const result = scoreAndSort({
@@ -75,8 +74,8 @@ describe('scoreAndSort', () => {
     // 由于加权平均归一化，没有 clearStock 维度的 r2 只靠 noRepeat=1 得到 1.0
     // 而 r1 有 noRepeat + clearStock 两个维度，如果 noRepeat 不是满分，加权后会更高
     const calendar: CalendarEntry[] = [
-      { id: 'c1', user_id: 'u1', date: new Date(Date.now() - 15 * day).toISOString().split('T')[0], recipe_id: 'r1', status: 'completed', notes: null, created_at: '', updated_at: '' },
-      { id: 'c2', user_id: 'u1', date: new Date(Date.now() - 15 * day).toISOString().split('T')[0], recipe_id: 'r2', status: 'completed', notes: null, created_at: '', updated_at: '' },
+      { id: 'c1', date: new Date(Date.now() - 15 * day).toISOString().split('T')[0], recipe_id: 'r1', status: 'completed', notes: null, created_at: '', updated_at: '' },
+      { id: 'c2', date: new Date(Date.now() - 15 * day).toISOString().split('T')[0], recipe_id: 'r2', status: 'completed', notes: null, created_at: '', updated_at: '' },
     ];
 
     const result = scoreAndSort({
@@ -102,12 +101,12 @@ describe('scoreAndSort', () => {
 
     // 给两道菜相同的近期日历记录（noRepeat 分相同）
     const calendar: CalendarEntry[] = [
-      { id: 'c0', user_id: 'u1', date: new Date(Date.now() - 10 * day).toISOString().split('T')[0], recipe_id: 'rv', status: 'completed', notes: null, created_at: '', updated_at: '' },
-      { id: 'c0b', user_id: 'u1', date: new Date(Date.now() - 10 * day).toISOString().split('T')[0], recipe_id: 'rm', status: 'completed', notes: null, created_at: '', updated_at: '' },
+      { id: 'c0', date: new Date(Date.now() - 10 * day).toISOString().split('T')[0], recipe_id: 'rv', status: 'completed', notes: null, created_at: '', updated_at: '' },
+      { id: 'c0b', date: new Date(Date.now() - 10 * day).toISOString().split('T')[0], recipe_id: 'rm', status: 'completed', notes: null, created_at: '', updated_at: '' },
       // 近 3 天做了其他菜，触发营养搭配维度
-      { id: 'c1', user_id: 'u1', date: new Date(Date.now() - 1 * day).toISOString().split('T')[0], recipe_id: 'cx1', status: 'completed', notes: null, created_at: '', updated_at: '' },
-      { id: 'c2', user_id: 'u1', date: new Date(Date.now() - 2 * day).toISOString().split('T')[0], recipe_id: 'cx2', status: 'completed', notes: null, created_at: '', updated_at: '' },
-      { id: 'c3', user_id: 'u1', date: new Date(Date.now() - 3 * day).toISOString().split('T')[0], recipe_id: 'cx3', status: 'completed', notes: null, created_at: '', updated_at: '' },
+      { id: 'c1', date: new Date(Date.now() - 1 * day).toISOString().split('T')[0], recipe_id: 'cx1', status: 'completed', notes: null, created_at: '', updated_at: '' },
+      { id: 'c2', date: new Date(Date.now() - 2 * day).toISOString().split('T')[0], recipe_id: 'cx2', status: 'completed', notes: null, created_at: '', updated_at: '' },
+      { id: 'c3', date: new Date(Date.now() - 3 * day).toISOString().split('T')[0], recipe_id: 'cx3', status: 'completed', notes: null, created_at: '', updated_at: '' },
     ];
 
     const result = scoreAndSort({

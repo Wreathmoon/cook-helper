@@ -8,6 +8,7 @@ import type { Dayjs } from 'dayjs';
 import type { CalendarEntry, CalendarStatus, StockLevel } from '@/types';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatusDot } from '@/components/shared/StatusDot';
+import { useReadOnly } from '@/components/layout/read-only-provider';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -80,8 +81,12 @@ export function CalendarView({
   onCompleteEntry,
   onFetchDoneIngredients,
   onDoneSubmit,
-  readOnly,
+  readOnly: readOnlyProp,
 }: CalendarViewProps) {
+  // 页面不必逐个传：只读状态从根布局的 ReadOnlyProvider 兜底。
+  // hook 必须无条件调用，不能写成 `readOnlyProp ?? useReadOnly()`——`??` 会短路掉它
+  const contextReadOnly = useReadOnly();
+  const readOnly = readOnlyProp ?? contextReadOnly;
   const [month, setMonth] = useState(dayjs());
   const [selectedDate, setSelectedDate] = useState<Dayjs | null>(null);
 

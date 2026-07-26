@@ -1,136 +1,176 @@
-import { describe, it, expect, vi } from 'vitest';
-import { batchUpdateStockLevel, markRestocked, batchMarkRestocked, listInventory, addInventoryItem } from '../index';
+import { describe, it, expect, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { parse as parseYaml } from 'yaml';
+import {
+  listInventory,
+  addInventoryItem,
+  updateInventoryItem,
+  deleteInventoryItem,
+  batchUpdateStockLevel,
+  markRestocked,
+  batchMarkRestocked,
+} from '../index';
+import { makeTestVault } from '@/lib/vault/__tests__/make-test-vault';
+import { vaultPaths } from '@/lib/vault';
 
-// ── mock Supabase client ─────────────────────────────────
-function createMockSupabase(responses: Record<string, any> = {}) {
-  const mockChain: any = {};
-  const methods = ['select', 'insert', 'update', 'delete', 'eq', 'in', 'order', 'gte', 'lt', 'contains', 'ilike'];
+let vault: ReturnType<typeof makeTestVault>;
 
-  for (const method of methods) {
-    mockChain[method] = vi.fn().mockReturnValue(mockChain);
-  }
+afterEach(() => vault?.cleanup());
 
-  mockChain.single = vi.fn().mockResolvedValue({ data: responses.single || null, error: null });
-
-  // 正确的 thenable 实现 — 直接 resolve 数据，不要包在 Promise 里
-  mockChain.then = vi.fn().mockImplementation((onFulfilled: any) => {
-    const data = responses.many || [];
-    onFulfilled({ data, error: null });
-    return mockChain; // 返回 thenable 以支持链式 then 调用
+function setup() {
+  vault = makeTestVault({
+    inventory: [
+      { name: '西红柿', category: 'vegetable', stock_level: 'enough' },
+      { name: '牛肉', category: 'meat', stock_level: 'out' },
+      { name: '盐', category: 'seasoning', stock_level: 'low' },
+    ],
   });
+  return vault;
+}
 
-  return {
-    from: vi.fn().mockReturnValue(mockChain),
-    auth: {
-      getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'test-user' } } }),
-    },
-    _chain: mockChain,
-  } as any;
+/** 读回落盘的 yaml —— 服务层写没写对，看文件最实在 */
+function readCategoryFile(category: string): Record<string, unknown>[] {
+  return parseYaml(readFileSync(vaultPaths.inventoryFile(vault.root, category), 'utf8')) ?? [];
 }
 
 describe('listInventory', () => {
-  it('正确调用 from("inventory") 并返回数据', async () => {
-    const mockData = [
-      { id: '1', user_id: 'u1', name: '西红柿', category: 'vegetable', stock_level: 'enough' },
-    ];
-    const supabase = createMockSupabase({ many: mockData });
-
-    const result = await listInventory(supabase, 'u1');
-    expect(supabase.from).toHaveBeenCalledWith('inventory');
-    expect(result.data).toEqual(mockData);
+  it('返回全部食材，按分类和名称排序', async () => {
+    setup();
+    const result = await listInventory(vault);
     expect(result.error).toBeNull();
+    expect(result.data.map((i) => i.name)).toEqual(['牛肉', '盐', '西红柿']);
+  });
+
+  it('按分类筛选', async () => {
+    setup();
+    const result = await listInventory(vault, 'meat');
+    expect(result.data.map((i) => i.name)).toEqual(['牛肉']);
   });
 });
 
 describe('addInventoryItem', () => {
-  it('插入食材并返回结果', async () => {
-    const newItem = { id: 'new1', user_id: 'u1', name: '白菜', category: 'vegetable', stock_level: 'enough' };
-    const supabase = createMockSupabase({ single: newItem });
+  it('新增食材并写进对应分类文件', async () => {
+    setup();
+    const result = await addInventoryItem(vault, { name: '白菜', category: 'vegetable' });
 
-    const result = await addInventoryItem(supabase, 'u1', { name: '白菜', category: 'vegetable' });
-    expect(supabase.from).toHaveBeenCalledWith('inventory');
-    expect(result.data).toEqual(newItem);
     expect(result.error).toBeNull();
+    expect(result.data?.name).toBe('白菜');
+    expect(readCategoryFile('vegetable').map((row) => row.name)).toEqual(['白菜', '西红柿']);
+  });
+
+  it('id 用归一化后的名称 —— 这是 vault 的关联键', async () => {
+    setup();
+    const result = await addInventoryItem(vault, { name: '  土豆 ', category: 'vegetable' });
+    expect(result.data?.id).toBe('土豆');
+  });
+
+  it('默认 enough 时记一笔补货日期', async () => {
+    setup();
+    const result = await addInventoryItem(vault, { name: '黄瓜', category: 'vegetable' });
+    expect(result.data?.stock_level).toBe('enough');
+    expect(result.data?.last_restocked_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('out / low 不记补货日期', async () => {
+    setup();
+    const result = await addInventoryItem(vault, {
+      name: '黄瓜',
+      category: 'vegetable',
+      stock_level: 'out',
+    });
+    expect(result.data?.last_restocked_at).toBeNull();
+  });
+
+  it('重名被拒绝', async () => {
+    setup();
+    const result = await addInventoryItem(vault, { name: '西红柿', category: 'vegetable' });
+    expect(result.data).toBeNull();
+    expect(result.error).toContain('已经在库存里');
+  });
+});
+
+describe('updateInventoryItem', () => {
+  it('改成 enough 时刷新补货日期', async () => {
+    setup();
+    const result = await updateInventoryItem(vault, '牛肉', { stock_level: 'enough' });
+    expect(result.data?.stock_level).toBe('enough');
+    expect(result.data?.last_restocked_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('改名时 id 跟着走', async () => {
+    setup();
+    const result = await updateInventoryItem(vault, '牛肉', { name: '牛腩' });
+    expect(result.data?.id).toBe('牛腩');
+  });
+
+  it('换分类会同时重写两个分类文件', async () => {
+    setup();
+    await updateInventoryItem(vault, '牛肉', { category: 'staple' });
+    expect(readCategoryFile('meat')).toEqual([]);
+    expect(readCategoryFile('staple').map((row) => row.name)).toEqual(['牛肉']);
+  });
+
+  it('食材不存在时报错而不是静默成功', async () => {
+    setup();
+    const result = await updateInventoryItem(vault, '不存在的食材', { stock_level: 'low' });
+    expect(result.error).toBe('食材不存在');
+  });
+});
+
+describe('deleteInventoryItem', () => {
+  it('删掉后文件里也没有了', async () => {
+    setup();
+    const result = await deleteInventoryItem(vault, '西红柿');
+    expect(result.error).toBeNull();
+    expect(vault.inventory.map((i) => i.name)).not.toContain('西红柿');
+    expect(readCategoryFile('vegetable')).toEqual([]);
   });
 });
 
 describe('batchUpdateStockLevel', () => {
-  it('对每个 item 调用 update 并设置正确参数', async () => {
-    const supabase = createMockSupabase();
-
-    const items = [
-      { id: 'i1', stock_level: 'low' as const },
-      { id: 'i2', stock_level: 'enough' as const },
-    ];
-
-    const result = await batchUpdateStockLevel(supabase, 'u1', items);
-
-    // 应该调用 from('inventory') 两次
-    const fromCalls = supabase.from.mock.calls;
-    expect(fromCalls.length).toBe(2);
-    expect(fromCalls[0][0]).toBe('inventory');
-    expect(fromCalls[1][0]).toBe('inventory');
-
-    // update 应该被调用
-    expect(supabase._chain.update).toHaveBeenCalledTimes(2);
-
-    // 第二个 item stock_level=enough 应该设置 last_restocked_at
-    const secondUpdateArg = supabase._chain.update.mock.calls[1][0];
-    expect(secondUpdateArg.stock_level).toBe('enough');
-    expect(secondUpdateArg.last_restocked_at).toBeDefined();
-
-    expect(result.error).toBeNull();
-  });
-
-  it('stock_level 为 low 时不设置 last_restocked_at', async () => {
-    const supabase = createMockSupabase();
-
-    const result = await batchUpdateStockLevel(supabase, 'u1', [
-      { id: 'i1', stock_level: 'low' },
+  it('批量改档位，enough 的那条记补货日期，low 的不记', async () => {
+    setup();
+    await batchUpdateStockLevel(vault, [
+      { id: '西红柿', stock_level: 'low' },
+      { id: '牛肉', stock_level: 'enough' },
     ]);
 
-    const updateArg = supabase._chain.update.mock.calls[0][0];
-    expect(updateArg.stock_level).toBe('low');
-    expect(updateArg.last_restocked_at).toBeUndefined();
+    const tomato = vault.inventory.find((i) => i.id === '西红柿')!;
+    const beef = vault.inventory.find((i) => i.id === '牛肉')!;
+    expect(tomato.stock_level).toBe('low');
+    expect(tomato.last_restocked_at).toBeNull();
+    expect(beef.stock_level).toBe('enough');
+    expect(beef.last_restocked_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('id 对不上的条目跳过，不影响其它条目', async () => {
+    setup();
+    const result = await batchUpdateStockLevel(vault, [
+      { id: '查无此物', stock_level: 'low' },
+      { id: '盐', stock_level: 'enough' },
+    ]);
     expect(result.error).toBeNull();
+    expect(vault.inventory.find((i) => i.id === '盐')!.stock_level).toBe('enough');
   });
 });
 
-describe('markRestocked', () => {
-  it('设置 stock_level=enough 和 last_restocked_at', async () => {
-    const updatedItem = { id: 'i1', stock_level: 'enough', last_restocked_at: new Date().toISOString() };
-    const supabase = createMockSupabase({ single: updatedItem });
-
-    const result = await markRestocked(supabase, 'u1', 'i1');
-
-    expect(supabase.from).toHaveBeenCalledWith('inventory');
-    expect(supabase._chain.update).toHaveBeenCalled();
-
-    const updateArg = supabase._chain.update.mock.calls[0][0];
-    expect(updateArg.stock_level).toBe('enough');
-    expect(updateArg.last_restocked_at).toBeDefined();
-    expect(result.data).toEqual(updatedItem);
-  });
-});
-
-describe('batchMarkRestocked', () => {
-  it('对每个 id 调用 update 设置 enough', async () => {
-    const supabase = createMockSupabase();
-
-    const result = await batchMarkRestocked(supabase, 'u1', ['i1', 'i2', 'i3']);
-
-    expect(supabase._chain.update).toHaveBeenCalledTimes(3);
-    for (const call of supabase._chain.update.mock.calls) {
-      expect(call[0].stock_level).toBe('enough');
-      expect(call[0].last_restocked_at).toBeDefined();
-    }
-    expect(result.error).toBeNull();
+describe('markRestocked / batchMarkRestocked', () => {
+  it('markRestocked 把单条置为 enough', async () => {
+    setup();
+    const result = await markRestocked(vault, '牛肉');
+    expect(result.data?.stock_level).toBe('enough');
+    expect(result.data?.last_restocked_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it('空数组不调用 update', async () => {
-    const supabase = createMockSupabase();
-    const result = await batchMarkRestocked(supabase, 'u1', []);
-    expect(supabase._chain.update).not.toHaveBeenCalled();
+  it('batchMarkRestocked 把多条置为 enough', async () => {
+    setup();
+    await batchMarkRestocked(vault, ['牛肉', '盐']);
+    expect(vault.inventory.every((i) => i.stock_level === 'enough')).toBe(true);
+  });
+
+  it('空数组直接返回成功，不碰文件', async () => {
+    setup();
+    const result = await batchMarkRestocked(vault, []);
     expect(result.error).toBeNull();
   });
 });

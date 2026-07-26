@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { Spin, message } from 'antd';
 import { getRecipeDetailForCalendar, addCalendarEntryAction } from '@/app/actions/calendar';
-import { getPhotoUrl } from '@/app/actions/recipe';
+import { getPhotoUrl, uploadRecipePhotoAction } from '@/app/actions/recipe';
+import { compressImage, formatBytes } from '@/lib/utils/compress-image';
+import { useReadOnly, READ_ONLY_TIP } from '@/components/layout/read-only-provider';
 import type { Recipe, StockLevel, Difficulty } from '@/types';
 import type { RecipeDetail } from '@/lib/services/recipe';
 import { StatusDot, type StatusDotStatus } from './StatusDot';
@@ -50,33 +52,34 @@ export function RecipeDetailModal({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const readOnly = useReadOnly();
   const [detail, setDetail] = useState<RecipeDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  // 一打开就是加载中：组件由 key 重挂载，每次都从头取一次详情
+  const [loading, setLoading] = useState(true);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [galIdx, setGalIdx] = useState(0);
   const [cooking, setCooking] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 换一道菜时不在这里手动重置 state —— 调用方用 `key={recipe.id}` 让组件整个重挂载
+  // （React 官方对「props 变了要重置 state」的推荐做法）。这里只负责取数据。
   useEffect(() => {
-    if (!open || !recipe) {
-      setDetail(null);
-      setPhotoUrls([]);
-      setGalIdx(0);
-      return;
-    }
+    if (!open || !recipe) return;
+
     let cancelled = false;
-    setLoading(true);
     (async () => {
       try {
         const res = await getRecipeDetailForCalendar(recipe.id);
         if (cancelled) return;
+        if (res.error) message.error(res.error);
         if (res.data) {
           setDetail(res.data);
-          if (res.data.photos.length > 0) {
-            const urls = await Promise.all(res.data.photos.map((p) => getPhotoUrl(p.storage_path)));
-            if (!cancelled) setPhotoUrls(urls);
-          } else {
-            setPhotoUrls([]);
-          }
+          const urls =
+            res.data.photos.length > 0
+              ? await Promise.all(res.data.photos.map((p) => getPhotoUrl(p.storage_path)))
+              : [];
+          if (!cancelled) setPhotoUrls(urls);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -113,6 +116,43 @@ export function RecipeDetailModal({
   }
 
   const galN = photoUrls.length;
+
+  const reloadPhotos = async () => {
+    const res = await getRecipeDetailForCalendar(recipe.id);
+    if (!res.data) return;
+    setDetail(res.data);
+    setPhotoUrls(await Promise.all(res.data.photos.map((p) => getPhotoUrl(p.storage_path))));
+  };
+
+  const handlePickPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      // 先在浏览器里压，再交给服务端写文件——手机原图直接进 vault 会把它撑爆
+      const { file: compressed, originalBytes, compressedBytes } = await compressImage(file);
+
+      const formData = new FormData();
+      formData.append('file', compressed);
+      const res = await uploadRecipePhotoAction(recipe.id, formData);
+
+      if (res.error) {
+        message.error(res.error);
+        return;
+      }
+      await reloadPhotos();
+      setGalIdx(0);
+      message.success(
+        compressedBytes < originalBytes
+          ? `已保存（${formatBytes(originalBytes)} → ${formatBytes(compressedBytes)}）`
+          : '已保存'
+      );
+    } catch {
+      message.error('照片保存失败');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleCook = async () => {
     setCooking(true);
@@ -185,9 +225,51 @@ export function RecipeDetailModal({
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             ) : (
-              '暂无成品照'
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 22, opacity: 0.5 }}>📷</span>
+                <span>还没有成品照</span>
+                {!readOnly && (
+                  <span style={{ fontSize: 11, opacity: 0.75 }}>做完拍一张，下次就认得出来</span>
+                )}
+              </div>
             )}
           </div>
+
+          {/* 加照片 —— 照片直接写进菜谱自己的目录，上传前在浏览器里压缩 */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={(e) => handlePickPhoto(e.target.files?.[0])}
+          />
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => {
+              if (readOnly) {
+                message.info(READ_ONLY_TIP);
+                return;
+              }
+              fileInputRef.current?.click();
+            }}
+            style={{
+              position: 'absolute',
+              bottom: 12,
+              right: 12,
+              padding: '5px 12px',
+              borderRadius: 99,
+              border: '1px solid var(--line)',
+              background: 'var(--panel)',
+              color: 'var(--tx2)',
+              fontSize: 11,
+              cursor: uploading ? 'default' : 'pointer',
+              opacity: uploading ? 0.6 : 0.95,
+              boxShadow: 'var(--shadow-card)',
+            }}
+          >
+            {uploading ? '保存中…' : '📷 加照片'}
+          </button>
           {galN > 1 && (
             <>
               <span

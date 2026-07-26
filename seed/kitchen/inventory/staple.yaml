@@ -1,0 +1,10 @@
+# staple 库存 — 按名称排序
+- name: 大米
+  stock_level: enough
+  unit: g
+- name: 面粉
+  stock_level: enough
+  unit: g
+- name: 面条
+  stock_level: enough
+  unit: g

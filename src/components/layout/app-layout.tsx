@@ -1,11 +1,9 @@
 'use client';
-import React, { Suspense } from 'react';
+import React from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useThemeStore } from '@/store/theme-store';
-import { signOut } from '@/app/actions/auth';
-import { Button } from 'antd';
-import { UserOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons';
+import { SunOutlined, MoonOutlined } from '@ant-design/icons';
 
 type IconProps = { size?: number };
 
@@ -74,7 +72,7 @@ interface NavItem {
   icon: React.ComponentType<IconProps>;
 }
 
-const AUTH_NAV_ITEMS: NavItem[] = [
+const NAV_ITEMS: NavItem[] = [
   { key: '/recommend', label: '推荐', icon: RecommendIcon },
   { key: '/calendar', label: '日历', icon: CalendarIcon },
   { key: '/recipes', label: '菜谱', icon: RecipesIcon },
@@ -82,48 +80,12 @@ const AUTH_NAV_ITEMS: NavItem[] = [
   { key: '/utensils', label: '厨具', icon: UtensilsIcon },
 ];
 
-const TAB_KEYS = ['recommend', 'calendar', 'recipes', 'inventory', 'utensils'];
-
-function GuestNav() {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const activeTab = searchParams.get('tab') || 'recommend';
-
-  return (
-    <nav style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 12px' }}>
-      {AUTH_NAV_ITEMS.map((item, i) => {
-        const tabKey = TAB_KEYS[i];
-        const active = pathname === '/demo' && activeTab === tabKey;
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.key}
-            href={`/demo?tab=${tabKey}`}
-            title={item.label}
-            className="nav-item"
-            style={{
-              fontSize: 13,
-              fontWeight: active ? 600 : 400,
-              color: active ? 'var(--primary)' : 'var(--tx)',
-              background: active ? 'var(--primary-soft)' : 'transparent',
-              textDecoration: 'none',
-            }}
-          >
-            <Icon size={16} />
-            <span className="nav-label">{item.label}</span>
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
-function AuthNav() {
+function MainNav() {
   const pathname = usePathname();
 
   return (
     <nav style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 12px' }}>
-      {AUTH_NAV_ITEMS.map((item) => {
+      {NAV_ITEMS.map((item) => {
         const active = pathname === item.key || pathname?.startsWith(`${item.key}/`);
         const Icon = item.icon;
         return (
@@ -149,30 +111,16 @@ function AuthNav() {
   );
 }
 
-export interface AppLayoutUser {
-  email?: string | null;
-  name?: string | null;
-}
-
 export function AppLayout({
   children,
-  user,
+  readOnly = false,
 }: {
   children: React.ReactNode;
-  user?: AppLayoutUser | null;
+  /** 只读沙盒（cook.wreathmoon.com）。本地跑永远是 false */
+  readOnly?: boolean;
 }) {
-  const router = useRouter();
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
   const toggleTheme = useThemeStore((state) => state.toggleTheme);
-  const isGuest = !user;
-
-  const displayName = user?.name || user?.email || '游客';
-  const initial = displayName.charAt(0).toUpperCase();
-
-  const handleSignOut = async () => {
-    await signOut();
-    router.push('/login');
-  };
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg)' }}>
@@ -184,74 +132,30 @@ export function AppLayout({
           </span>
         </div>
 
-        {isGuest ? (
-          <Suspense fallback={<nav style={{ flex: 1 }} />}>
-            <GuestNav />
-          </Suspense>
-        ) : (
-          <AuthNav />
-        )}
+        <MainNav />
 
-        <div className="user-area" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 8px 0', borderTop: '1px solid var(--line)', marginTop: 'auto' }}>
-          {isGuest ? (
-            <>
-              <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
-                <div style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, background: 'var(--primary-soft)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
-                  游
-                </div>
-                <div className="user-text" style={{ minWidth: 0, flex: 1 }}>
-                  <b style={{ fontSize: 12, color: 'var(--tx)' }}>游客</b>
-                  <div style={{ fontSize: 10.5, color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    只读 Demo
-                  </div>
-                </div>
-                <button
-                  type="button" onClick={toggleTheme}
-                  title={isDarkMode ? '切换到浅色' : '切换到深色'}
-                  style={{ width: 26, height: 26, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--tx)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}
-                >
-                  {isDarkMode ? <MoonOutlined /> : <SunOutlined />}
-                </button>
-              </div>
-              <Button type="primary" block size="small" icon={<UserOutlined />} onClick={() => router.push('/login')}>
-                登录 / 注册
-              </Button>
-            </>
-          ) : (
-            <>
-              <div style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, background: 'var(--primary-soft)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
-                {initial}
-              </div>
-              <div className="user-text" style={{ minWidth: 0, flex: 1 }}>
-                <b style={{ fontSize: 12, color: 'var(--tx)' }}>{displayName}</b>
-                <div style={{ fontSize: 10.5, color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {user?.email || ''}
-                </div>
-              </div>
-              <button
-                type="button" onClick={toggleTheme}
-                title={isDarkMode ? '切换到浅色' : '切换到深色'}
-                style={{ marginLeft: 'auto', width: 26, height: 26, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--tx)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}
-              >
-                {isDarkMode ? <MoonOutlined /> : <SunOutlined />}
-              </button>
-              <button
-                type="button" onClick={handleSignOut}
-                title="退出登录"
-                style={{ width: 26, height: 26, flexShrink: 0, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--tx2)', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                ↩
-              </button>
-            </>
-          )}
+        <div className="user-area" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 8px 0', borderTop: '1px solid var(--line)', marginTop: 'auto' }}>
+          <div className="user-text" style={{ minWidth: 0, flex: 1 }}>
+            <b style={{ fontSize: 12, color: 'var(--tx)' }}>本机</b>
+            <div style={{ fontSize: 10.5, color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              数据在你自己的磁盘上
+            </div>
+          </div>
+          <button
+            type="button" onClick={toggleTheme}
+            title={isDarkMode ? '切换到浅色' : '切换到深色'}
+            style={{ width: 26, height: 26, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--tx)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}
+          >
+            {isDarkMode ? <MoonOutlined /> : <SunOutlined />}
+          </button>
         </div>
       </aside>
 
       {/* 主内容区 */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
-        {isGuest && (
+        {readOnly && (
           <div style={{ position: 'sticky', top: 0, zIndex: 10, padding: '8px 16px', background: 'var(--warn-bg)', color: 'var(--warn)', fontSize: 12, textAlign: 'center', fontWeight: 600 }}>
-            Demo 演示数据
+            只读演示实例 —— 改动不会被保存
           </div>
         )}
         <div style={{ flex: 1, overflow: 'hidden' }}>

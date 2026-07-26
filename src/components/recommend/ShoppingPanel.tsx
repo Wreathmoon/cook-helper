@@ -17,6 +17,12 @@ export function ShoppingPanel({
   checkoutLoading: boolean;
   loading: boolean;
 }) {
+  // 参考价是可选的，所以合计只是「有价那部分的合计」，并把覆盖率一并说清楚，
+  // 免得看着一个偏低的数字以为这就是全部要花的钱
+  const pricedItems = items.filter((item) => typeof item.price === 'number');
+  const estimatedTotal = pricedItems.reduce((sum, item) => sum + (item.price ?? 0), 0);
+  const pricedCount = pricedItems.length;
+
   if (loading) {
     return (
       <div className="card shoplist" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -47,6 +53,15 @@ export function ShoppingPanel({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <b style={{ fontSize: 14 }}>🛒 购物清单</b>
         <span className="section-cnt">{items.length} 项</span>
+        {estimatedTotal > 0 && (
+          <>
+            <span style={{ flex: 1 }} />
+            <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>
+              约 ¥{estimatedTotal.toFixed(0)}
+              {pricedCount < items.length ? `（${pricedCount}/${items.length} 项有参考价）` : ''}
+            </span>
+          </>
+        )}
       </div>
       <div className="sub" style={{ fontSize: 11.5, color: 'var(--tx2)' }}>
         勾选的菜缺什么 + 库存告急的常备项；打勾 = 已买到，库存自动改「充足」
@@ -93,6 +108,11 @@ export function ShoppingPanel({
                     {checked ? '已买到 → 库存已更新' : item.source}
                   </div>
                 </div>
+                {item.price !== undefined && (
+                  <span style={{ fontSize: 11.5, color: 'var(--tx2)', flexShrink: 0, marginTop: 1 }}>
+                    ¥{item.price}
+                  </span>
+                )}
               </div>
             );
           })}

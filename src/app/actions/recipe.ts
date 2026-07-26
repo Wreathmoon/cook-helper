@@ -1,6 +1,5 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
 import {
   listRecipes,
   getRecipeDetail,
@@ -12,27 +11,28 @@ import {
 } from '@/lib/services/recipe';
 import { listInventory } from '@/lib/services/inventory';
 import { listUtensils } from '@/lib/services/utensil';
+import { getVault } from '@/lib/vault';
+import { guardData, guardResult } from '@/lib/utils/error';
+import type { Difficulty, InventoryItem, Recipe, RecipeAttributes, Utensil } from '@/types';
 import { revalidatePath } from 'next/cache';
+
+type RecipeIngredientInput = {
+  inventory_id: string;
+  role: 'main' | 'auxiliary' | 'seasoning';
+  amount?: string;
+};
 
 export async function getListRecipes(filters?: {
   search?: string;
   attributes?: Record<string, unknown>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  return listRecipes(supabase, user.id, filters as any);
+  return guardData([] as Recipe[], () =>
+    listRecipes(getVault(), filters as { search?: string; attributes?: RecipeAttributes })
+  );
 }
 
 export async function getRecipeDetailAction(recipeId: string) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  return getRecipeDetail(supabase, user.id, recipeId);
+  return guardData(null, () => getRecipeDetail(getVault(), recipeId));
 }
 
 export async function createRecipeAction(data: {
@@ -45,12 +45,16 @@ export async function createRecipeAction(data: {
   ingredients?: { inventory_id: string; role: string; amount?: string }[];
   utensils?: string[];
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  const result = await createRecipe(supabase, user.id, data as any);
+  const result = await guardResult(
+    () =>
+      createRecipe(getVault(), {
+        ...data,
+        difficulty: data.difficulty as Difficulty | undefined,
+        attributes: data.attributes as RecipeAttributes | undefined,
+        ingredients: data.ingredients as RecipeIngredientInput[] | undefined,
+      }),
+    { data: null }
+  );
   revalidatePath('/recipes');
   return result;
 }
@@ -68,71 +72,55 @@ export async function updateRecipeAction(
     utensils?: string[];
   }
 ) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  const result = await updateRecipe(supabase, user.id, recipeId, data as any);
+  const result = await guardResult(
+    () =>
+      updateRecipe(getVault(), recipeId, {
+        ...data,
+        difficulty: data.difficulty as Difficulty | undefined,
+        attributes: data.attributes as RecipeAttributes | undefined,
+        ingredients: data.ingredients as RecipeIngredientInput[] | undefined,
+      }),
+    { data: null }
+  );
   revalidatePath('/recipes');
   return result;
 }
 
 export async function deleteRecipeAction(recipeId: string) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  const result = await deleteRecipe(supabase, user.id, recipeId);
+  const result = await guardResult(() => deleteRecipe(getVault(), recipeId));
   revalidatePath('/recipes');
   return result;
 }
 
 export async function getInventoryForRecipe() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  return listInventory(supabase, user.id);
+  return guardData([] as InventoryItem[], () => listInventory(getVault()));
 }
 
 export async function getUtensilsForRecipe() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  return listUtensils(supabase, user.id);
+  return guardData([] as Utensil[], () => listUtensils(getVault()));
 }
 
-export async function uploadRecipePhotoAction(recipeId: string, file: File) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  const result = await uploadRecipePhoto(supabase, user.id, recipeId, file);
+export async function uploadRecipePhotoAction(recipeId: string, formData: FormData) {
+  const file = formData.get('file');
+  if (!(file instanceof File)) return { data: null, error: '没有收到文件' };
+
+  const result = await guardResult(() => uploadRecipePhoto(getVault(), recipeId, file), {
+    data: null,
+  });
   revalidatePath('/recipes');
   return result;
 }
 
 export async function deleteRecipePhotoAction(photoId: string) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('未登录');
-  const result = await deleteRecipePhoto(supabase, user.id, photoId);
+  const result = await guardResult(() => deleteRecipePhoto(getVault(), photoId));
   revalidatePath('/recipes');
   return result;
 }
 
+/**
+ * 照片是 vault 里的普通文件，不是对象存储的对象。
+ * 交给 /api/photo 读盘并流出去（它做了越界路径检查）。
+ */
 export async function getPhotoUrl(storagePath: string) {
-  const supabase = await createClient();
-  const { data } = supabase.storage
-    .from('recipe-photos')
-    .getPublicUrl(storagePath);
-  return data.publicUrl;
+  return `/api/photo?path=${encodeURIComponent(storagePath)}`;
 }

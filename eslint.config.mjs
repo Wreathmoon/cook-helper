@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 第三方设计交付物，不是本项目代码（Task/04 Step 0）
+    "claude design/**",
   ]),
 ]);
 

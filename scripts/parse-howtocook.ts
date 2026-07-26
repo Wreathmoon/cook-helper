@@ -220,7 +220,7 @@ function inferMethod(name: string, steps: string[]): string[] {
   const methods: string[] = [];
   for (const [method, keywords] of Object.entries(METHOD_KEYWORDS)) {
     if (keywords.some(kw => text.includes(kw))) {
-      methods.push(method as any);
+      methods.push(method);
     }
   }
   return methods.length > 0 ? methods : ['炒'];

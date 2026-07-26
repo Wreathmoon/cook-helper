@@ -1,41 +1,42 @@
 /**
  * Calendar Service — A 层核心纯函数
- * 同构纯函数，签名 fn(supabase, userId, args)，不依赖浏览器全局
- * 供 UI (Server Actions) 和二期 Agent 共用
+ * 签名 fn(vault, args)。数据落在 `kitchen/calendar/{YYYY}-{MM}.yaml`，一月一份。
+ *
+ * 按月分片是为了在粗暴同步（iCloud / Dropbox / git）下少冲突：
+ * 改今天的记录不会碰到上个月的文件。
  */
-import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CalendarEntry, CalendarPhoto } from '@/types';
+import type { CalendarEntry } from '@/types';
+import type { Vault } from '@/lib/vault';
+import { assertWritable, generateUlid, monthOf, VaultError, writeCalendarMonth } from '@/lib/vault';
+
+function toMessage(err: unknown): string {
+  return err instanceof VaultError ? err.toDisplayString() : (err as Error).message;
+}
 
 /** 获取月视图日历条目 */
 export async function getCalendarEntries(
-  supabase: SupabaseClient,
-  userId: string,
+  vault: Vault,
   year: number,
   month: number // 1-12
 ): Promise<{
   data: (CalendarEntry & { recipe?: { name: string } })[];
   error: string | null;
 }> {
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-  const endMonth = month === 12 ? 1 : month + 1;
-  const endYear = month === 12 ? year + 1 : year;
-  const endDate = `${endYear}-${String(endMonth).padStart(2, '0')}-01`;
+  const prefix = `${year}-${String(month).padStart(2, '0')}`;
 
-  const { data, error } = await supabase
-    .from('calendar_entries')
-    .select('*, recipe:recipe_id(name)')
-    .eq('user_id', userId)
-    .gte('date', startDate)
-    .lt('date', endDate)
-    .order('date');
+  const data = vault.calendar
+    .filter((entry) => entry.date.startsWith(prefix))
+    .map((entry) => ({
+      ...entry,
+      recipe: { name: vault.calendarRecipeNames.get(entry.id) ?? '' },
+    }));
 
-  return { data: data || [], error: error?.message || null };
+  return { data, error: null };
 }
 
 /** 新增日历条目 */
 export async function addCalendarEntry(
-  supabase: SupabaseClient,
-  userId: string,
+  vault: Vault,
   entry: {
     date: string;
     recipe_id: string;
@@ -43,72 +44,73 @@ export async function addCalendarEntry(
     notes?: string;
   }
 ): Promise<{ data: CalendarEntry | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from('calendar_entries')
-    .insert({
-      ...entry,
-      user_id: userId,
-      status: entry.status || 'completed',
-    })
-    .select()
-    .single();
+  try {
+    assertWritable('记录日历');
 
-  return { data, error: error?.message || null };
+    const recipe = vault.recipes.find((item) => item.id === entry.recipe_id);
+    if (!recipe) return { data: null, error: '菜谱不存在' };
+
+    const now = new Date().toISOString();
+    const created: CalendarEntry = {
+      id: generateUlid(),
+      date: entry.date,
+      recipe_id: entry.recipe_id,
+      status: entry.status || 'completed',
+      notes: entry.notes ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    vault.calendar.push(created);
+    vault.calendar.sort((a, b) => a.date.localeCompare(b.date));
+    // 文件里按名称引用菜谱，不是 id —— 名称是纯文本世界的关联键
+    vault.calendarRecipeNames.set(created.id, recipe.name);
+
+    writeCalendarMonth(vault, monthOf(created.date));
+    return { data: created, error: null };
+  } catch (err) {
+    return { data: null, error: toMessage(err) };
+  }
 }
 
 /** 标记条目完成 */
 export async function completeEntry(
-  supabase: SupabaseClient,
-  userId: string,
+  vault: Vault,
   entryId: string
 ): Promise<{ data: CalendarEntry | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from('calendar_entries')
-    .update({ status: 'completed' })
-    .eq('id', entryId)
-    .eq('user_id', userId)
-    .select()
-    .single();
+  try {
+    assertWritable('更新日历');
 
-  return { data, error: error?.message || null };
-}
+    const entry = vault.calendar.find((item) => item.id === entryId);
+    if (!entry) return { data: null, error: '日历条目不存在' };
 
-/** 上传日历照片 */
-export async function uploadCalendarPhoto(
-  supabase: SupabaseClient,
-  userId: string,
-  entryId: string,
-  file: File
-): Promise<{ data: CalendarPhoto | null; error: string | null }> {
-  const ext = file.name.split('.').pop();
-  const path = `${userId}/${entryId}/${Date.now()}.${ext}`;
+    entry.status = 'completed';
+    entry.updated_at = new Date().toISOString();
 
-  const { error: uploadError } = await supabase.storage
-    .from('calendar-photos')
-    .upload(path, file);
-
-  if (uploadError) return { data: null, error: uploadError.message };
-
-  const { data: photo, error: photoError } = await supabase
-    .from('calendar_photos')
-    .insert({ calendar_entry_id: entryId, storage_path: path })
-    .select()
-    .single();
-
-  return { data: photo, error: photoError?.message || null };
+    writeCalendarMonth(vault, monthOf(entry.date));
+    return { data: entry, error: null };
+  } catch (err) {
+    return { data: null, error: toMessage(err) };
+  }
 }
 
 /** 删除日历条目 */
 export async function deleteCalendarEntry(
-  supabase: SupabaseClient,
-  userId: string,
+  vault: Vault,
   entryId: string
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase
-    .from('calendar_entries')
-    .delete()
-    .eq('id', entryId)
-    .eq('user_id', userId);
+  try {
+    assertWritable('删除日历记录');
 
-  return { error: error?.message || null };
+    const index = vault.calendar.findIndex((item) => item.id === entryId);
+    if (index === -1) return { error: '日历条目不存在' };
+
+    const [removed] = vault.calendar.splice(index, 1);
+    vault.calendarRecipeNames.delete(removed.id);
+
+    writeCalendarMonth(vault, monthOf(removed.date));
+    return { error: null };
+  } catch (err) {
+    return { error: toMessage(err) };
+  }
 }

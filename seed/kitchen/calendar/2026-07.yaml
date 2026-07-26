@@ -1,0 +1,18 @@
+# 2026-07 烹饪日历 — 按日期排序
+- id: 01KYG0WZJT06AGE9QPXA5P6DCP
+  date: 2026-07-20
+  recipe_name: 西红柿炒鸡蛋
+  status: completed
+  notes: 火候刚好
+- id: 01KYG0WZJTBCNZF2ZT27076PR3
+  date: 2026-07-22
+  recipe_name: 红烧肉
+  status: completed
+- id: 01KYG0WZJT5S5P5JVWE022ZZ13
+  date: 2026-07-24
+  recipe_name: 青椒肉丝
+  status: completed
+- id: 01KYG0WZJTEP2E1MQBN2EG1TXB
+  date: 2026-07-28
+  recipe_name: 麻婆豆腐
+  status: planned

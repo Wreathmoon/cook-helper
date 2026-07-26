@@ -1,9 +1,12 @@
 /**
  * Recipe Service — A 层核心纯函数
- * 同构纯函数，签名 fn(supabase, userId, args)，不依赖浏览器全局
- * 供 UI (Server Actions) 和二期 Agent 共用
+ * 签名 fn(vault, args)。数据落在 `kitchen/recipes/{菜谱名}/recipe.md`。
+ *
+ * 一菜一目录：`recipe.md` 和它的照片放一起，整个目录可以直接发给别人
+ * （社区分享的雏形，见 Task/14）。
  */
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import type {
   Recipe,
   RecipeIngredient,
@@ -12,8 +15,18 @@ import type {
   RecipeAttributes,
   Difficulty,
 } from '@/types';
+import { normalizeIngredientName } from '@/lib/utils/normalize-name';
+import type { Vault, VaultRecipeIngredient } from '@/lib/vault';
+import {
+  assertWritable,
+  deleteRecipeDir,
+  generateUlid,
+  VaultError,
+  vaultPaths,
+  writeRecipe,
+} from '@/lib/vault';
 
-/** 菜谱详情（含关联食材和厨具） */
+/** 菜谱详情（含关联食材和厨具）*/
 export interface RecipeDetail extends Recipe {
   ingredients: (RecipeIngredient & {
     inventory?: { name: string; category: string; stock_level: string };
@@ -22,113 +35,100 @@ export interface RecipeDetail extends Recipe {
   photos: RecipePhoto[];
 }
 
-/** 菜谱列表（支持搜索 + 标签筛选） */
+function toMessage(err: unknown): string {
+  return err instanceof VaultError ? err.toDisplayString() : (err as Error).message;
+}
+
+/** 菜谱列表（支持搜索 + 标签筛选）*/
 export async function listRecipes(
-  supabase: SupabaseClient,
-  userId: string,
+  vault: Vault,
   filters?: {
     search?: string;
     attributes?: Partial<RecipeAttributes>;
   }
 ): Promise<{ data: Recipe[]; error: string | null }> {
-  let query = supabase
-    .from('recipes')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+  let data = vault.recipes;
 
   if (filters?.search) {
-    query = query.ilike('name', `%${filters.search}%`);
+    const keyword = filters.search.trim().toLowerCase();
+    if (keyword) data = data.filter((recipe) => recipe.name.toLowerCase().includes(keyword));
   }
 
-  // jsonb 属性筛选
-  if (filters?.attributes) {
-    const attrs = filters.attributes;
+  const attrs = filters?.attributes;
+  if (attrs) {
+    data = data.filter((recipe) => {
+      const recipeAttrs = recipe.attributes ?? {};
 
-    // 数组类型字段用 contains
-    if (attrs.method && attrs.method.length > 0) {
-      query = query.contains('attributes', JSON.stringify({ method: attrs.method }));
-    }
-    if (attrs.nutrition && attrs.nutrition.length > 0) {
-      query = query.contains('attributes', JSON.stringify({ nutrition: attrs.nutrition }));
-    }
-    if (attrs.scene && attrs.scene.length > 0) {
-      query = query.contains('attributes', JSON.stringify({ scene: attrs.scene }));
-    }
+      // 数组字段：菜谱只要命中任意一个选中的标签就算匹配
+      for (const key of ['method', 'nutrition', 'scene'] as const) {
+        const wanted = attrs[key];
+        if (wanted && wanted.length > 0) {
+          const owned = (recipeAttrs[key] ?? []) as string[];
+          if (!wanted.some((value) => owned.includes(value as never))) return false;
+        }
+      }
 
-    // 单值字段直接匹配
-    if (attrs.spiciness) {
-      query = query.contains('attributes', JSON.stringify({ spiciness: attrs.spiciness }));
-    }
-    if (attrs.greasiness) {
-      query = query.contains('attributes', JSON.stringify({ greasiness: attrs.greasiness }));
-    }
-    if (attrs.flavor) {
-      query = query.contains('attributes', JSON.stringify({ flavor: attrs.flavor }));
-    }
-    if (attrs.diet_type) {
-      query = query.contains('attributes', JSON.stringify({ diet_type: attrs.diet_type }));
-    }
-    if (attrs.cuisine) {
-      query = query.contains('attributes', JSON.stringify({ cuisine: attrs.cuisine }));
-    }
+      // 单值字段：精确匹配
+      for (const key of ['spiciness', 'greasiness', 'flavor', 'diet_type', 'cuisine'] as const) {
+        const wanted = attrs[key];
+        if (wanted && recipeAttrs[key] !== wanted) return false;
+      }
+
+      return true;
+    });
   }
 
-  const { data, error } = await query;
-  return { data: data || [], error: error?.message || null };
+  return { data, error: null };
 }
 
-/** 菜谱详情（含关联食材和厨具） */
+/** 菜谱详情（含关联食材和厨具）*/
 export async function getRecipeDetail(
-  supabase: SupabaseClient,
-  userId: string,
+  vault: Vault,
   recipeId: string
 ): Promise<{ data: RecipeDetail | null; error: string | null }> {
-  // 获取菜谱基本信息
-  const { data: recipe, error: recipeError } = await supabase
-    .from('recipes')
-    .select('*')
-    .eq('id', recipeId)
-    .eq('user_id', userId)
-    .single();
+  const recipe = vault.recipes.find((item) => item.id === recipeId);
+  if (!recipe) return { data: null, error: '菜谱不存在' };
 
-  if (recipeError || !recipe) {
-    return { data: null, error: recipeError?.message || '菜谱不存在' };
-  }
+  const inventoryById = new Map(vault.inventory.map((item) => [item.id, item]));
+  const ingredients = (vault.recipeIngredients.get(recipeId) ?? []).map((ing, index) => {
+    const inventory = inventoryById.get(ing.inventory_id);
+    return {
+      id: `${recipeId}:ing:${index}`,
+      recipe_id: recipeId,
+      inventory_id: ing.inventory_id,
+      role: ing.role,
+      amount: ing.amount ?? null,
+      // 匹配不上库存的食材照样展示（名字就在 inventory_id 里），只是没有档位信息
+      inventory: inventory
+        ? {
+            name: inventory.name,
+            category: inventory.category,
+            stock_level: inventory.stock_level,
+          }
+        : undefined,
+    };
+  });
 
-  // 获取关联食材（含 inventory 信息）
-  const { data: ingredients } = await supabase
-    .from('recipe_ingredients')
-    .select('*, inventory:inventory_id(name, category, stock_level)')
-    .eq('recipe_id', recipeId);
-
-  // 获取关联厨具
-  const { data: utensils } = await supabase
-    .from('recipe_utensils')
-    .select('*')
-    .eq('recipe_id', recipeId);
-
-  // 获取照片
-  const { data: photos } = await supabase
-    .from('recipe_photos')
-    .select('*')
-    .eq('recipe_id', recipeId);
+  const utensils = (vault.recipeUtensils.get(recipeId) ?? []).map((name, index) => ({
+    id: `${recipeId}:ut:${index}`,
+    recipe_id: recipeId,
+    utensil_name: name,
+  }));
 
   return {
     data: {
       ...recipe,
-      ingredients: ingredients || [],
-      utensils: utensils || [],
-      photos: photos || [],
+      ingredients,
+      utensils,
+      photos: vault.recipePhotos.get(recipeId) ?? [],
     },
     error: null,
   };
 }
 
-/** 创建菜谱（含关联写入） */
+/** 创建菜谱 */
 export async function createRecipe(
-  supabase: SupabaseClient,
-  userId: string,
+  vault: Vault,
   data: {
     name: string;
     steps?: { step_number: number; description: string }[];
@@ -141,63 +141,50 @@ export async function createRecipe(
       role: 'main' | 'auxiliary' | 'seasoning';
       amount?: string;
     }[];
-    utensils?: string[]; // utensil names
+    utensils?: string[];
   }
 ): Promise<{ data: Recipe | null; error: string | null }> {
-  // 1. 创建菜谱
-  const { data: recipe, error: recipeError } = await supabase
-    .from('recipes')
-    .insert({
-      name: data.name,
-      user_id: userId,
-      steps: data.steps || null,
-      cook_time_minutes: data.cook_time_minutes || null,
-      difficulty: data.difficulty || null,
-      attributes: data.attributes || {},
-      tips: data.tips || null,
-    })
-    .select()
-    .single();
+  try {
+    assertWritable('新建菜谱');
 
-  if (recipeError || !recipe) {
-    return { data: null, error: recipeError?.message || '创建菜谱失败' };
+    const name = data.name.trim();
+    if (!name) return { data: null, error: '菜谱名称不能为空' };
+    if (vault.recipes.some((recipe) => recipe.name === name)) {
+      return { data: null, error: `已经有一道叫「${name}」的菜了，换个名字吧` };
+    }
+
+    const now = new Date().toISOString();
+    const recipe: Recipe = {
+      id: generateUlid(),
+      name,
+      steps: data.steps ?? null,
+      cook_time_minutes: data.cook_time_minutes ?? null,
+      difficulty: data.difficulty ?? null,
+      attributes: data.attributes ?? {},
+      tips: data.tips ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    const ingredients = normalizeIngredients(vault, data.ingredients);
+    const utensils = data.utensils ?? [];
+
+    vault.recipes.unshift(recipe);
+    vault.recipeDirs.set(recipe.id, safeDirName(name));
+    vault.recipeIngredients.set(recipe.id, ingredients);
+    vault.recipeUtensils.set(recipe.id, utensils);
+    vault.recipePhotos.set(recipe.id, []);
+
+    writeRecipe(vault, recipe, ingredients, utensils, []);
+    return { data: recipe, error: null };
+  } catch (err) {
+    return { data: null, error: toMessage(err) };
   }
-
-  // 2. 创建食材关联
-  if (data.ingredients && data.ingredients.length > 0) {
-    const { error } = await supabase
-      .from('recipe_ingredients')
-      .insert(
-        data.ingredients.map((ing) => ({
-          recipe_id: recipe.id,
-          inventory_id: ing.inventory_id,
-          role: ing.role,
-          amount: ing.amount || null,
-        }))
-      );
-    if (error) return { data: null, error: error.message };
-  }
-
-  // 3. 创建厨具关联
-  if (data.utensils && data.utensils.length > 0) {
-    const { error } = await supabase
-      .from('recipe_utensils')
-      .insert(
-        data.utensils.map((name) => ({
-          recipe_id: recipe.id,
-          utensil_name: name,
-        }))
-      );
-    if (error) return { data: null, error: error.message };
-  }
-
-  return { data: recipe, error: null };
 }
 
-/** 更新菜谱（食材/厨具采用先删后增策略） */
+/** 更新菜谱 */
 export async function updateRecipe(
-  supabase: SupabaseClient,
-  userId: string,
+  vault: Vault,
   recipeId: string,
   data: {
     name?: string;
@@ -214,125 +201,177 @@ export async function updateRecipe(
     utensils?: string[];
   }
 ): Promise<{ data: Recipe | null; error: string | null }> {
-  // 1. 更新菜谱基本信息
-  const { error: recipeError } = await supabase
-    .from('recipes')
-    .update({
-      ...(data.name !== undefined && { name: data.name }),
-      ...(data.steps !== undefined && { steps: data.steps }),
-      ...(data.cook_time_minutes !== undefined && {
-        cook_time_minutes: data.cook_time_minutes,
-      }),
-      ...(data.difficulty !== undefined && { difficulty: data.difficulty }),
-      ...(data.attributes !== undefined && { attributes: data.attributes }),
-      ...(data.tips !== undefined && { tips: data.tips }),
-    })
-    .eq('id', recipeId)
-    .eq('user_id', userId);
+  try {
+    assertWritable('修改菜谱');
 
-  if (recipeError) return { data: null, error: recipeError.message };
+    const recipe = vault.recipes.find((item) => item.id === recipeId);
+    if (!recipe) return { data: null, error: '菜谱不存在' };
 
-  // 2. 重建食材关联（先删后增）
-  if (data.ingredients !== undefined) {
-    await supabase.from('recipe_ingredients').delete().eq('recipe_id', recipeId);
-    if (data.ingredients.length > 0) {
-      const { error } = await supabase.from('recipe_ingredients').insert(
-        data.ingredients.map((ing) => ({
-          recipe_id: recipeId,
-          inventory_id: ing.inventory_id,
-          role: ing.role,
-          amount: ing.amount || null,
-        }))
-      );
-      if (error) return { data: null, error: error.message };
+    // 改名 = 换目录。先把旧目录删掉，再按新名字写一份
+    const renamed = data.name !== undefined && data.name.trim() !== recipe.name;
+    if (renamed) {
+      const name = data.name!.trim();
+      if (!name) return { data: null, error: '菜谱名称不能为空' };
+      if (vault.recipes.some((item) => item.id !== recipeId && item.name === name)) {
+        return { data: null, error: `已经有一道叫「${name}」的菜了，换个名字吧` };
+      }
+      deleteRecipeDir(vault, recipeId);
+      recipe.name = name;
+      vault.recipeDirs.set(recipeId, safeDirName(name));
     }
-  }
 
-  // 3. 重建厨具关联
-  if (data.utensils !== undefined) {
-    await supabase.from('recipe_utensils').delete().eq('recipe_id', recipeId);
-    if (data.utensils.length > 0) {
-      const { error } = await supabase.from('recipe_utensils').insert(
-        data.utensils.map((name) => ({
-          recipe_id: recipeId,
-          utensil_name: name,
-        }))
-      );
-      if (error) return { data: null, error: error.message };
+    if (data.steps !== undefined) recipe.steps = data.steps;
+    if (data.cook_time_minutes !== undefined) recipe.cook_time_minutes = data.cook_time_minutes;
+    if (data.difficulty !== undefined) recipe.difficulty = data.difficulty;
+    if (data.attributes !== undefined) recipe.attributes = data.attributes;
+    if (data.tips !== undefined) recipe.tips = data.tips;
+    recipe.updated_at = new Date().toISOString();
+
+    if (data.ingredients !== undefined) {
+      vault.recipeIngredients.set(recipeId, normalizeIngredients(vault, data.ingredients));
     }
+    if (data.utensils !== undefined) {
+      vault.recipeUtensils.set(recipeId, data.utensils);
+    }
+
+    writeRecipe(
+      vault,
+      recipe,
+      vault.recipeIngredients.get(recipeId) ?? [],
+      vault.recipeUtensils.get(recipeId) ?? [],
+      photoFileNames(vault, recipeId)
+    );
+    return { data: recipe, error: null };
+  } catch (err) {
+    return { data: null, error: toMessage(err) };
   }
-
-  // 返回更新后的菜谱
-  const { data: updated } = await supabase
-    .from('recipes')
-    .select('*')
-    .eq('id', recipeId)
-    .single();
-
-  return { data: updated, error: null };
 }
 
-/** 删除菜谱 */
+/** 删除菜谱（连同它的目录和照片）*/
 export async function deleteRecipe(
-  supabase: SupabaseClient,
-  userId: string,
+  vault: Vault,
   recipeId: string
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase
-    .from('recipes')
-    .delete()
-    .eq('id', recipeId)
-    .eq('user_id', userId);
+  try {
+    assertWritable('删除菜谱');
 
-  return { error: error?.message || null };
+    const index = vault.recipes.findIndex((item) => item.id === recipeId);
+    if (index === -1) return { error: '菜谱不存在' };
+
+    deleteRecipeDir(vault, recipeId);
+    vault.recipes.splice(index, 1);
+    vault.recipeDirs.delete(recipeId);
+    vault.recipeIngredients.delete(recipeId);
+    vault.recipeUtensils.delete(recipeId);
+    vault.recipePhotos.delete(recipeId);
+
+    return { error: null };
+  } catch (err) {
+    return { error: toMessage(err) };
+  }
 }
 
-/** 上传菜谱照片 */
+/** 保存菜谱照片 —— 写进菜谱自己的目录，不再是对象存储 */
 export async function uploadRecipePhoto(
-  supabase: SupabaseClient,
-  userId: string,
+  vault: Vault,
   recipeId: string,
   file: File
 ): Promise<{ data: RecipePhoto | null; error: string | null }> {
-  const ext = file.name.split('.').pop();
-  const path = `${userId}/${recipeId}/${Date.now()}.${ext}`;
+  try {
+    assertWritable('上传照片');
 
-  const { error: uploadError } = await supabase.storage
-    .from('recipe-photos')
-    .upload(path, file);
+    const recipe = vault.recipes.find((item) => item.id === recipeId);
+    if (!recipe) return { data: null, error: '菜谱不存在' };
 
-  if (uploadError) return { data: null, error: uploadError.message };
+    const dirName = vault.recipeDirs.get(recipeId) ?? safeDirName(recipe.name);
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const fileName = `${Date.now()}.${ext}`;
+    const absolutePath = path.join(vaultPaths.recipeDir(vault.root, dirName), fileName);
 
-  const { data: photo, error: photoError } = await supabase
-    .from('recipe_photos')
-    .insert({ recipe_id: recipeId, storage_path: path })
-    .select()
-    .single();
+    writeFileSync(absolutePath, Buffer.from(await file.arrayBuffer()));
 
-  return { data: photo, error: photoError?.message || null };
+    const photo: RecipePhoto = {
+      id: `${recipeId}:${fileName}`,
+      recipe_id: recipeId,
+      storage_path: `kitchen/recipes/${dirName}/${fileName}`,
+      created_at: new Date().toISOString(),
+    };
+
+    vault.recipePhotos.set(recipeId, [...(vault.recipePhotos.get(recipeId) ?? []), photo]);
+    writeRecipe(
+      vault,
+      recipe,
+      vault.recipeIngredients.get(recipeId) ?? [],
+      vault.recipeUtensils.get(recipeId) ?? [],
+      photoFileNames(vault, recipeId)
+    );
+
+    return { data: photo, error: null };
+  } catch (err) {
+    return { data: null, error: toMessage(err) };
+  }
 }
 
 /** 删除菜谱照片 */
 export async function deleteRecipePhoto(
-  supabase: SupabaseClient,
-  _userId: string,
+  vault: Vault,
   photoId: string
 ): Promise<{ error: string | null }> {
-  // 先获取照片路径
-  const { data: photo } = await supabase
-    .from('recipe_photos')
-    .select('storage_path')
-    .eq('id', photoId)
-    .single();
+  try {
+    assertWritable('删除照片');
 
-  if (photo) {
-    await supabase.storage.from('recipe-photos').remove([photo.storage_path]);
+    const recipeId = photoId.split(':')[0];
+    const photos = vault.recipePhotos.get(recipeId) ?? [];
+    const photo = photos.find((item) => item.id === photoId);
+    if (!photo) return { error: '照片不存在' };
+
+    // ⚠️ 用 unlinkSync，别用 `rmSync(file, { force: true })`——实测在 Windows + Node 23 上
+    // 后者对单个文件**静默不删也不报错**，照片会永远留在磁盘上变成孤儿文件
+    const absolutePath = path.join(vault.root, photo.storage_path);
+    if (existsSync(absolutePath)) unlinkSync(absolutePath);
+
+    vault.recipePhotos.set(
+      recipeId,
+      photos.filter((item) => item.id !== photoId)
+    );
+
+    const recipe = vault.recipes.find((item) => item.id === recipeId);
+    if (recipe) {
+      writeRecipe(
+        vault,
+        recipe,
+        vault.recipeIngredients.get(recipeId) ?? [],
+        vault.recipeUtensils.get(recipeId) ?? [],
+        photoFileNames(vault, recipeId)
+      );
+    }
+
+    return { error: null };
+  } catch (err) {
+    return { error: toMessage(err) };
   }
+}
 
-  const { error } = await supabase
-    .from('recipe_photos')
-    .delete()
-    .eq('id', photoId);
+// ── 工具 ─────────────────────────────────────────────────
 
-  return { error: error?.message || null };
+/** UI 传来的 inventory_id 就是食材名称，但用户输入的可能是别名，统一归一 */
+function normalizeIngredients(
+  vault: Vault,
+  ingredients?: { inventory_id: string; role: 'main' | 'auxiliary' | 'seasoning'; amount?: string }[]
+): VaultRecipeIngredient[] {
+  return (ingredients ?? []).map((ing) => ({
+    inventory_id: normalizeIngredientName(ing.inventory_id, vault.aliases),
+    role: ing.role,
+    amount: ing.amount,
+  }));
+}
+
+/** frontmatter 的 photos 写的是相对 `recipe.md` 的文件名 */
+function photoFileNames(vault: Vault, recipeId: string): string[] {
+  return (vault.recipePhotos.get(recipeId) ?? []).map((photo) => path.basename(photo.storage_path));
+}
+
+/** 菜谱名直接当目录名，只挡掉真的会让文件系统炸掉的字符 */
+function safeDirName(name: string): string {
+  return name.replace(/[/\\:*?"<>|]/g, '_').trim();
 }

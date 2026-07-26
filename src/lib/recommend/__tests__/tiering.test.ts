@@ -5,7 +5,6 @@ import type { Recipe, InventoryItem, Utensil, CalendarEntry } from '@/types';
 // ── helpers ──────────────────────────────────────────────
 function makeInventory(overrides: Partial<InventoryItem> & { id: string; name: string; category: InventoryItem['category'] }): InventoryItem {
   return {
-    user_id: 'u1',
     total_amount: null,
     stock_level: 'enough',
     unit: null,
@@ -20,7 +19,6 @@ function makeInventory(overrides: Partial<InventoryItem> & { id: string; name: s
 function makeRecipe(id: string, name: string, cookTime: number | null = null): Recipe {
   return {
     id,
-    user_id: 'u1',
     name,
     steps: null,
     cook_time_minutes: cookTime,
@@ -44,7 +42,7 @@ describe('tierRecipes', () => {
     const result = tierRecipes({
       recipes: [recipe],
       inventory: [inv1, inv2],
-      utensils: [{ id: 'ut1', user_id: 'u1', name: '炒锅', note: null, created_at: '', updated_at: '' }],
+      utensils: [{ id: 'ut1', name: '炒锅', note: null, created_at: '', updated_at: '' }],
       calendarEntries: [],
       recipeIngredients: new Map([['r1', [{ inventory_id: 'i1', role: 'main' }, { inventory_id: 'i2', role: 'main' }]]]),
       recipeUtensils: new Map([['r1', ['炒锅']]]),

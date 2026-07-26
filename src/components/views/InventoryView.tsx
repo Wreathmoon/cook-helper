@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Segmented, Modal, Form, Input, Select, DatePicker, message, Button } from 'antd';
+import { Segmented, Modal, Form, Input, InputNumber, Select, DatePicker, message, Button } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { InventoryItem, InventoryCategory, StockLevel } from '@/types';
 import { StatusDot } from '@/components/shared/StatusDot';
+import { EmptyState } from '@/components/shared/EmptyState';
+import { useReadOnly, READ_ONLY_TIP } from '@/components/layout/read-only-provider';
 
 const CATEGORIES: { key: InventoryCategory | 'all'; label: string }[] = [
   { key: 'all', label: '全部' },
@@ -44,6 +46,9 @@ function getHint(item: InventoryItem): { text: string; color: string } {
   const threshold = item.category === 'vegetable' ? 3 : item.category === 'meat' ? 5 : 7;
   if (days >= threshold && days > 0) return { text: `${days}天前入库 · 建议先吃`, color: 'var(--notice)' };
   if (days > 0) return { text: `${days}天前入库`, color: 'var(--tx2)' };
+  // 没写入库日期 ≠ 刚买回来。vault 里 last_restocked_at 是可选的，
+  // 没有它就是「不知道多久了」——也因此永远不会被判为该清库存
+  if (days < 0) return { text: '未记录入库时间', color: 'var(--tx2)' };
   return { text: '刚入库', color: 'var(--tx2)' };
 }
 
@@ -68,8 +73,12 @@ export function InventoryView({
   onEdit,
   onDelete,
   onStockChange,
-  readOnly,
+  readOnly: readOnlyProp,
 }: InventoryViewProps) {
+  // 页面不必逐个传：只读状态从根布局的 ReadOnlyProvider 兜底。
+  // hook 必须无条件调用，不能写成 `readOnlyProp ?? useReadOnly()`——`??` 会短路掉它
+  const contextReadOnly = useReadOnly();
+  const readOnly = readOnlyProp ?? contextReadOnly;
   const [activeCat, setActiveCat] = useState<InventoryCategory | 'all'>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<InventoryItem | null>(null);
@@ -94,12 +103,12 @@ export function InventoryView({
   );
 
   const openAdd = () => {
-    if (readOnly) { message.info('请登录后添加食材'); return; }
+    if (readOnly) { message.info(READ_ONLY_TIP); return; }
     setEditing(null); form.resetFields(); form.setFieldsValue({ stock_level: 'enough' }); setModalOpen(true);
   };
 
   const openEdit = (item: InventoryItem) => {
-    if (readOnly) { message.info('请登录后编辑'); return; }
+    if (readOnly) { message.info(READ_ONLY_TIP); return; }
     setEditing(item);
     form.setFieldsValue({ ...item, last_restocked_at: item.last_restocked_at ? dayjs(item.last_restocked_at) : null });
     setModalOpen(true);
@@ -118,7 +127,7 @@ export function InventoryView({
   };
 
   const handleStockChange = (item: InventoryItem, level: StockLevel) => {
-    if (readOnly) { message.info('请登录后修改库存'); return; }
+    if (readOnly) { message.info(READ_ONLY_TIP); return; }
     setPulsingId(item.id);
     onStockChange(item.id, level);
     setTimeout(() => setPulsingId(null), 500);
@@ -170,7 +179,13 @@ export function InventoryView({
           {/* 右侧表格 */}
           <div style={{ flex: '1 1 460px', minWidth: 0, borderRadius: 14, background: 'var(--panel)', border: '1px solid var(--line)', overflow: 'hidden' }}>
             {visibleItems.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 60, fontSize: 13, color: 'var(--tx2)' }}>暂无食材</div>
+              <EmptyState
+                icon="🥬"
+                title={activeCat === 'all' ? '库存还是空的' : '这个分类下还没有食材'}
+                description="推荐是按「你现在有什么」算出来的——库存空着，首页就没菜可推。先把冰箱里常备的几样填进来，剩下的随手补。"
+                actionLabel={readOnly ? undefined : '＋ 添加食材'}
+                onAction={readOnly ? undefined : openAdd}
+              />
             ) : (
               <div style={{ width: '100%' }}>
                 <div style={{ display: 'flex', background: 'var(--hover)', fontSize: 11.5, color: 'var(--tx2)', fontWeight: 600, borderBottom: '1px solid var(--line)' }}>
@@ -217,6 +232,9 @@ export function InventoryView({
             <Form.Item name="category" label="分类" rules={[{ required: true, message: '请选择分类' }]}><Select options={CATEGORY_OPTIONS} /></Form.Item>
             <Form.Item name="stock_level" label="库存档位"><Select options={STOCK_LEVELS} /></Form.Item>
             <Form.Item name="last_restocked_at" label="入库时间"><DatePicker style={{ width: '100%' }} /></Form.Item>
+            <Form.Item name="price" label="参考价（元）" tooltip="随手记一下平时多少钱，购物清单里会显示，方便估算这趟要花多少">
+              <InputNumber min={0} step={1} style={{ width: '100%' }} placeholder="可不填" />
+            </Form.Item>
             {editing && (
               <Form.Item>
                 <Button danger icon={<DeleteOutlined />} onClick={() => { onDelete(editing.id); setModalOpen(false); }}>删除</Button>

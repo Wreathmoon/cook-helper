@@ -1,0 +1,12 @@
+# 推荐引擎配置 — 改完重启即可生效
+topPerTier: 4
+clearStockThreshold:
+  vegetable: 3
+  meat: 7
+  egg_dairy_bean: 5
+weights:
+  noRepeat: 0.35
+  clearStock: 0.25
+  timeMatch: 0.2
+  nutritionBalance: 0.2
+maxMissingForShopping: 3

@@ -12,6 +12,7 @@ import {
   EmptyState,
   type FilterDimension,
 } from '@/components/recommend';
+import { useReadOnly } from '@/components/layout/read-only-provider';
 
 // ─── 筛选维度配置 ──────────────────────────────────────────────────────────────
 
@@ -86,7 +87,7 @@ export interface RecommendViewProps {
   onToggleCheckout: (key: string) => void;
   onCheckout: () => void;
 
-  /** demo 只读模式：就做这道/采购按钮显示登录提示而非实际执行 */
+  /** 只读沙盒：写操作提示「这是演示实例」而不实际执行。不传则从 ReadOnlyProvider 取 */
   readOnly?: boolean;
 }
 
@@ -107,8 +108,12 @@ export function RecommendView({
   onToggleSelect,
   onToggleCheckout,
   onCheckout,
-  readOnly,
+  readOnly: readOnlyProp,
 }: RecommendViewProps) {
+  // 页面不必逐个传：只读状态从根布局的 ReadOnlyProvider 兜底。
+  // hook 必须无条件调用，不能写成 `readOnlyProp ?? useReadOnly()`——`??` 会短路掉它
+  const contextReadOnly = useReadOnly();
+  const readOnly = readOnlyProp ?? contextReadOnly;
   const [filters, setFilters] = useState<FilterState>(emptyFilterState);
   const [filterOpen, setFilterOpen] = useState(false);
   const [heroIdx, setHeroIdx] = useState(0);
@@ -296,7 +301,8 @@ export function RecommendView({
         </div>
       </div>
 
-      <RecipeDetailModal recipe={detailRecipe?.recipe || null} open={!!detailRecipe} onClose={() => setDetailRecipe(null)} />
+      {/* key 让换一道菜时组件整个重挂载，省掉手动重置 state */}
+      <RecipeDetailModal key={detailRecipe?.recipe.id} recipe={detailRecipe?.recipe || null} open={!!detailRecipe} onClose={() => setDetailRecipe(null)} />
     </>
   );
 }

@@ -1,0 +1,27 @@
+# meat 库存 — 按名称排序
+- name: 鸡腿
+  stock_level: enough
+  unit: 个
+- name: 鸡胸肉
+  stock_level: enough
+  unit: g
+- name: 牛肉
+  stock_level: out
+  unit: g
+- name: 排骨
+  stock_level: enough
+  unit: g
+- name: 虾
+  stock_level: out
+  unit: g
+- name: 鸭
+  stock_level: out
+  unit: 只
+- name: 鱼
+  stock_level: low
+  unit: 条
+  note: 只剩一条小的
+- name: 猪肉
+  total_amount: 300g
+  stock_level: enough
+  unit: g

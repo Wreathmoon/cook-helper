@@ -1,12 +1,6 @@
-import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 
-export default async function Home() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (user) {
-    redirect('/recommend');
-  }
-  redirect('/demo');
+/** 没有登录页了，打开就直接进推荐 */
+export default function Home() {
+  redirect('/recommend');
 }

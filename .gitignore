@@ -55,5 +55,6 @@ claude design/
 .hermes/
 .worktrees/
 
-# supabase local temp
-supabase/.temp/
+
+# 运行时 vault —— 你自己的数据。种子模板在 seed/（进 git）
+data/
