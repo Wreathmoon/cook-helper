@@ -80,6 +80,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI',
     Roboto, sans-serif;
   transition: background-color 0.15s, color 0.15s;
+  overscroll-behavior: none;
 }
 
 a {
@@ -339,6 +340,7 @@ a {
   padding: 16px 24px 22px;
   overflow: auto;
   flex: 1;
+  overscroll-behavior: contain;
 }
 
 /* ─── 购物清单 (推荐页中间栏，全宽) ─── */
