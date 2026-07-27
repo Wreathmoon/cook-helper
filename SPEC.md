@@ -1,6 +1,7 @@
 # Cook Helper — Specification
 
-> **版本**: v2.0 | **更新**: 2026-07-26 | **状态**: 本地化改造完成  
+> **版本**: v2.1 | **更新**: 2026-07-26 | **状态**: 本地化改造完成  
+> **v2.1 的变化**：§10.2 补上两条部署必读警告（`READ_ONLY` 是必填、`seed/` 需要显式文件追踪）。
 > **v2.0 的变化**：数据层从 Supabase PostgreSQL 整体换成**本机纯文本 vault**，认证与多用户移除。§2 / §3 / §7 / §9 / §10 全部重写。  
 > **定位**: 本文档包含完整的技术实现规格——数据格式、路由、Service 签名、部署步骤。AI Agent 可据此复刻项目。设计理念见 [DESIGN.md](./DESIGN.md)，数据文件格式见 [docs/vault-format.md](./docs/vault-format.md)。  
 > **读者**: 开发者、AI Agent（理解项目实现细节的第二站）。
@@ -444,12 +445,21 @@ npm run dev          # → http://localhost:7474
 | # | 操作 |
 |---|------|
 | 1 | vercel.com → Import GitHub repo |
-| 2 | Environment Variables 加 `READ_ONLY=1` |
-| 3 | Framework: Next.js，Root: `/` |
+| 2 | Environment Variables 加 **`READ_ONLY=1`**（三个环境都勾） |
+| 3 | Framework: Next.js，Root: `/`；**不要设 `VAULT_PATH`** |
 | 4 | Deploy → Domains 绑定 `cook.wreathmoon.com`（DNS CNAME → cname.vercel-dns.com） |
 
 Vercel 的文件系统是只读的，`ensureVaultInitialized()` 在只读模式下直接读仓库里的
 `seed/`，不尝试复制。重启即重置。
+
+> ⚠️ **`READ_ONLY=1` 是必填项，不是优化项。** 不设的话应用会尝试把 `seed/` 复制成
+> `data/`，在 Vercel 的只读文件系统上直接 `EROFS`，**整站起不来**。
+
+> ⚠️ **`seed/` 靠 `next.config.ts` 的 `outputFileTracingIncludes` 才会进部署产物。**
+> 运行时读取路径是 `path.join(process.cwd(), 'seed')` 动态拼的，Next 的静态文件追踪
+> 看不见它，默认不打包 → 线上每个页面 `ENOENT`。**本地 `npm run dev` 永远发现不了
+> 这个问题**（本地就在项目目录里跑），所以改动 `next.config.ts` 或 vault 读取路径后，
+> 用 `.next/server/app/**/*.nft.json` 确认 seed 文件仍在追踪结果里。
 
 ### 10.3 验证清单
 
