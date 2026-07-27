@@ -1,6 +1,7 @@
 # Cook Helper — Specification
 
-> **版本**: v2.1 | **更新**: 2026-07-26 | **状态**: 本地化改造完成  
+> **版本**: v2.2 | **更新**: 2026-07-27 | **状态**: 本地化改造完成，只读沙盒已上线  
+> **v2.2 的变化**：新增 §8.1 客户端启动补丁（antd × React 19，`message.*` 不打补丁会静默失效）；§1 补依赖、§9 补文件、§11 测试 94 → 97。
 > **v2.1 的变化**：§10.2 补上两条部署必读警告（`READ_ONLY` 是必填、`seed/` 需要显式文件追踪）。
 > **v2.0 的变化**：数据层从 Supabase PostgreSQL 整体换成**本机纯文本 vault**，认证与多用户移除。§2 / §3 / §7 / §9 / §10 全部重写。  
 > **定位**: 本文档包含完整的技术实现规格——数据格式、路由、Service 签名、部署步骤。AI Agent 可据此复刻项目。设计理念见 [DESIGN.md](./DESIGN.md)，数据文件格式见 [docs/vault-format.md](./docs/vault-format.md)。  
@@ -18,6 +19,7 @@
 | antd | 5.29.3 | UI 组件库 |
 | @ant-design/pro-components | 2.8.10 | 高级组件 |
 | @ant-design/icons | 6.3.2 | 图标库 |
+| **@ant-design/v5-patch-for-react-19** | 1.0.3 | **必需**：antd v5 静态 `message.*` 在 React 19 下不打补丁就静默失效，见 §8.1 |
 | **yaml** | 2.9.0 | vault 文件解析 / 序列化 |
 | **zod** | 4.4.3 | vault schema 校验（产出可定位的报错） |
 | zustand | 5.0.14 | 客户端状态管理 |
@@ -365,6 +367,25 @@ scoreAndSort(recipes, context) → sorted by score desc
 > Zustand 仅管 UI 状态，不做服务端数据缓存。
 > 只读状态走 React Context（`components/layout/read-only-provider.tsx`），由根布局从服务端注入。
 
+### 8.1 客户端启动补丁 `src/instrumentation-client.ts`
+
+Next 的 `instrumentation-client` 约定：**HTML 加载后、React 水合前**执行一次。本项目用它引入
+`@ant-design/v5-patch-for-react-19`。
+
+**为什么必需**：antd v5 的静态 `message.*` / `notification.*` / `Modal.*` 要从 `react-dom`
+顶层取 `createRoot` 或 `render` 来挂 holder，而 React 19 把两者都只留在 `react-dom/client`。
+不打补丁时这些调用**静默失效**——不抛错、不弹窗，antd 那句兼容警告还被 `NODE_ENV !== 'production'`
+包着，所以线上连 console 都是干净的。全项目 10 个文件 68 处 `message.*` 会一起变哑。
+
+**必须在水合前执行**，因为它靠 `unstableSetRender` 改的是 antd 的全局渲染函数，晚于首次
+`message.*` 调用就来不及了。
+
+⚠️ **不要把它挪进某个 `'use client'` 组件的 `useEffect`** —— 那样执行时机晚于水合，
+且不保证早于第一次 `message.*`。
+
+**移除条件**：升级到 antd v6（原生支持 React 19），届时连同依赖一起删掉。
+`utils/__tests__/antd-message.test.ts` 会在补丁失效时立刻变红。
+
 ---
 
 ## 9. 项目文件树
@@ -388,6 +409,7 @@ cook-helper/
 ├── data/                        ← 运行时 vault（.gitignore，首次启动自动生成）
 │
 ├── src/
+│   ├── instrumentation-client.ts ← 水合前执行：antd × React 19 补丁（见 §8.1）
 │   ├── app/
 │   │   ├── layout.tsx           ← 根布局（AppLayout + ReadOnlyProvider）
 │   │   ├── page.tsx             ← → /recommend
@@ -466,7 +488,7 @@ Vercel 的文件系统是只读的，`ensureVaultInitialized()` 在只读模式�
 ```
 本地:
   npm run build            # 编译无错误（含 TypeScript 全量检查）
-  npx vitest run           # 94 tests 全绿
+  npx vitest run           # 97 tests 全绿
   npm run lint             # 0 error
 
 功能:
@@ -499,7 +521,11 @@ Vercel 的文件系统是只读的，`ensureVaultInitialized()` 在只读模式�
 | `services/shopping/__tests__/` | 购物清单生成 + 回填 | 9 |
 | `services/recipe/__tests__/photo.test.ts` | 照片落盘 / 删除 / frontmatter 同步 | 4 |
 | `seed/__tests__/seed-vault.test.ts` | 种子数据质量 + 首屏三档质量 | 11 |
-| **合计** | | **94** |
+| `utils/__tests__/antd-message.test.ts` | antd 静态 message 在 React 19 下真的挂进 DOM（jsdom） | 3 |
+| **合计** | | **97** |
+
+> `antd-message.test.ts` 是**唯一**跑在 jsdom 下的文件（靠文件头 `// @vitest-environment jsdom`，
+> 全局仍是 node 环境）。它守的那个 bug 之所以能活下来，正是因为其余测试全是纯函数测试、碰不到 DOM。
 
 运行: `npx vitest run`
 
