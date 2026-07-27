@@ -756,11 +756,14 @@ seedRecipes:     54   ✅ 这个数字是对的
 
 ### 剩余工作
 
-- ⬜ **只读沙盒的实际部署** → 已拆成 [Task/15](./15-readonly-sandbox-deploy.md)，需要作者的 Vercel 账号
-- ⬜ 17 个 `no-unused-vars` warning（不阻断，随手清即可）
-- ⬜ `.env.local` 里还留着旧的 Supabase key（已在 `.gitignore` 中，不影响运行，建议自行删掉；
-  更要紧的是去 Supabase 控制台**删掉那个项目**——删本地文件不吊销任何东西，
-  `SUPABASE_SERVICE_ROLE_KEY` 是绕过 RLS 的全权密钥）
+- ✅ **只读沙盒的实际部署** → 已拆成 [Task/15](./15-readonly-sandbox-deploy.md)，**2026-07-27 上线完成**，
+  <https://cook.wreathmoon.com> 6 条验收全过
+- ⬜ 17 个 `no-unused-vars` warning（不阻断，随手清即可）—— **仍未处理**，实测确认仍是 17 个
+- ✅ **旧 Supabase 凭据已彻底清除（2026-07-27，作者执行）**：`.env.local` 已删除（实测文件不存在），
+  且作者已在 Supabase 控制台**删掉整个项目**——这一步才是真正吊销 `SUPABASE_SERVICE_ROLE_KEY` 的动作。
+  另核实：该文件**从未被提交过**（`git log --all -- .env.local` 为空），历史里没有泄漏。
+- ✅ **VaultError 的用户可见形态**（原列在 Step 0–4 的剩余工作里）：错误分类已在 Step 6 完成，
+  但「用户真的看得见」这最后一米直到 2026-07-27 才通——`message.*` 整体失效，见 [Task/16](./16-global-ui-defects-✅已完成.md)
 
 ---
 
