@@ -183,7 +183,9 @@ export default function NewRecipePage() {
   };
 
   return (
-    <div>
+    // page-body：与其余页面共用同一套滚动契约（flex:1 + overflow:auto）与内边距。
+    // 这里原本是个裸 <div>，既滚不动、内容也紧贴侧边栏没有留白。
+    <div className="page-body">
       <div
         onClick={() => router.push('/recipes')}
         style={{

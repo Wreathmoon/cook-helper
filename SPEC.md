@@ -1,6 +1,7 @@
 # Cook Helper — Specification
 
-> **版本**: v2.2 | **更新**: 2026-07-27 | **状态**: 本地化改造完成，只读沙盒已上线  
+> **版本**: v2.3 | **更新**: 2026-07-27 | **状态**: 本地化改造完成，只读沙盒已上线  
+> **v2.3 的变化**：新增 §3.2.1 页面滚动契约——修一个「所有页面都滚不动」的 bug 时发现这条约束从没写下来过。
 > **v2.2 的变化**：新增 §8.1 客户端启动补丁（antd × React 19，`message.*` 不打补丁会静默失效）；§1 补依赖、§9 补文件、§11 测试 94 → 97。
 > **v2.1 的变化**：§10.2 补上两条部署必读警告（`READ_ONLY` 是必填、`seed/` 需要显式文件追踪）。
 > **v2.0 的变化**：数据层从 Supabase PostgreSQL 整体换成**本机纯文本 vault**，认证与多用户移除。§2 / §3 / §7 / §9 / §10 全部重写。  
@@ -148,6 +149,40 @@ const readOnly = isReadOnly();          // READ_ONLY 环境变量
   </ReadOnlyProvider>
 </ThemeProvider></AntdRegistry>
 ```
+
+### 3.2.1 页面滚动契约（改布局前必读）
+
+整页高度锁死在 `100vh`，**页面内容自己不撑高文档**——滚动发生在 `.page-body` 内部。
+这条链上任何一环写错，页面就会「滚不动、下半截被裁掉」，而且**没有任何报错**：
+
+```
+div  height:100vh; display:flex              ← AppLayout 根
+└ main  flex:1; display:flex; column; minHeight:0; overflow:hidden
+  └ div  flex:1; display:flex; column; minHeight:0; overflow:hidden   ← 内容槽
+    └ 页面根元素
+      ├ .page-head   flex:none            （可选）
+      └ .page-body   flex:1; overflow:auto ← ★ 真正的滚动容器
+```
+
+**每个页面的根必须让 `.page-body` 成为「内容槽」的 flex 子元素。** 两种合法写法：
+
+| 写法 | 用在 |
+|------|------|
+| 返回 `<>` 包 `.page-head` + `.page-body` 两个兄弟 | recommend / inventory / utensils |
+| 根元素自己就是 `.page-body`（`PageHeader` 放里面） | recipes / recipes/new / calendar |
+
+⚠️ **不要**给页面根套一个没有 `display:flex` 的 `<div>`，也**不要**让页面根是个裸 `<div>`
+而把 `.page-body` 埋在更深层——`.page-body` 的 `flex:1` 会失效，高度退化成内容高度，
+`overflow:auto` 永不触发，超出部分被上层 `overflow:hidden` 裁掉且**滚不到**。
+
+> `minHeight:0` 是必需的：flex item 默认 `min-height:auto`，不解除的话它会被内容撑破，
+> 而不是把溢出交给子级滚动。
+>
+> 回归判据（浏览器 console，任意页面）：
+> ```js
+> const b = document.querySelector('.page-body');
+> getComputedStyle(b.parentElement).display === 'flex'   // 必须 true
+> ```
 
 ### 3.3 数据加载约定
 

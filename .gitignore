@@ -41,10 +41,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# project blueprint docs — DESIGN/SPEC 已入库，路线图与任务仅本地保留
-FUTURE.md
-Task/
-
 # 设计过程文件（含已过期的 PRD 与第三方生成产物），仅本地保留
 claude design/
 

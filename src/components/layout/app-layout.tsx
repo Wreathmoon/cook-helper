@@ -158,7 +158,12 @@ export function AppLayout({
             只读演示实例 —— 改动不会被保存
           </div>
         )}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        {/* 必须是 flex column + minHeight:0：页面内容是 .page-head + .page-body 两个兄弟，
+            而 .page-body 靠 `flex:1; overflow:auto` 成为滚动容器。这里若是 block，
+            .page-body 的 flex 失效 → 高度变成内容高度 → overflow:auto 永不触发，
+            超出的部分被本容器 overflow:hidden 裁掉且滚不到。minHeight:0 用来解除
+            flex item 的默认 min-height:auto，否则它仍会被内容撑破而不是让子级滚动。 */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {children}
         </div>
       </main>
