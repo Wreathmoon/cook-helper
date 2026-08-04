@@ -1,7 +1,8 @@
 # Cook Helper — Future
 
-> **版本**: v2.5 | **创建**: 2026-07-25 | **更新**: 2026-07-28 | **状态**: 规划中
-> **v2.5 的变化**：[Task/15](./Task/15-readonly-sandbox-deploy-✅已完成.md) 正式闭合（线上 2026-07-28 复测通过，README 链接早已加上，此前索引里的「待确认」是陈旧状态）。**「本地化」整条线至此全部完成，下一件实质工作是 [Task/10](./Task/10-memory-layer.md) 记忆层——但它需要先定稿 7 条待决问题才谈得上写代码。**
+> **版本**: v2.6 | **创建**: 2026-07-25 | **更新**: 2026-08-04 | **状态**: 规划中
+> **v2.6 的变化**：**§2.2 ② 的「hard 约束进代码」已推翻**——核实种子数据发现代码过滤依赖的配料信息根本不存在（宫保鸡丁的食材表里没有花生），改为全部记忆交由 LLM 判断 + 免责声明，见该节纠正块。连带后果：记忆层成为第一个需要 API key 的功能，且记忆的**生效逻辑移到 [Task/12](./Task/12-ai-command-layer.md)**，[Task/10](./Task/10-memory-layer.md) 只交付格式 / 存储 / 检索 / 展示 / 免责。Task 10 的 12 条决策已全部定稿。
+> **v2.5 的变化**：[Task/15](./Task/15-readonly-sandbox-deploy-✅已完成.md) 正式闭合（线上 2026-08-04 复测通过，README 链接早已加上，此前索引里的「待确认」是陈旧状态）。**「本地化」整条线至此全部完成，下一件实质工作是 [Task/10](./Task/10-memory-layer.md) 记忆层——但它需要先定稿 7 条待决问题才谈得上写代码。**
 > **v2.4 的变化**：**本文档与 `Task/` 已纳入版本库**（推翻 [Task/03](./Task/03-open-source-essentials-✅已完成.md) 的原决策，理由见那里的决策纠正块）；07 正式取消、08 降级为条件触发的性能预案；新增 [Task/16](./Task/16-global-ui-defects-✅已完成.md)（toast 全哑 + 全站滚不动，均已修）。
 > **v2.3 的变化**：[Task/15](./Task/15-readonly-sandbox-deploy-✅已完成.md) 已上线——<https://cook.wreathmoon.com> 活着，6 条验收全过（其中第 3 条暴露出 antd × React 19 的 toast 静默失效，已修）。下一件实质工作回到 [Task/10](./Task/10-memory-layer.md)。
 > **v2.2 的变化**：04/05/06 的代码已落库（4 个提交）；只读沙盒的**部署**从 04 的尾注拆成独立的 [Task/15](./Task/15-readonly-sandbox-deploy-✅已完成.md)——它是当前唯一还能立刻推进的事。
@@ -135,7 +136,7 @@ photos: [../../assets/kitchen/宫保鸡丁-01.jpg]
 - ✅ **Supabase 彻底删除**，Auth / RLS / 多租户 / OTP 注册 / 种子复制的 service_role 逻辑整块剥掉
 - ✅ `cook.wreathmoon.com` **降级为只读沙盒**：部署同一份代码 + `READ_ONLY=1`。Vercel 文件系统本来就只读，所以这个形态几乎白拿——读仓库里的种子 vault 展示，写入优雅报错，重启自动重置。**它同时顶替了被删掉的 `/demo` 页**
 
-> **落地状态（2026-07-28 更新）**：代码侧已全部完成——`grep -ri supabase src/` 零结果，依赖已卸载，
+> **落地状态（2026-08-04 更新）**：代码侧已全部完成——`grep -ri supabase src/` 零结果，依赖已卸载，
 > `READ_ONLY=1` 的拦截、横幅与文案已实测通过（写入被拒且 `seed/` 校验和不变）。
 > **只读沙盒也已实际部署并验收**（[Task/15](./Task/15-readonly-sandbox-deploy-✅已完成.md) ✅）：<https://cook.wreathmoon.com> 线上运行，
 > 6 条验收全过，README 已挂演示链接。本条至此全部闭合。
@@ -178,11 +179,11 @@ photos: [../../assets/kitchen/宫保鸡丁-01.jpg]
 ```markdown
 ---
 id: 01J9AB3C
-type: preference          # preference(长期偏好) | goal(临时目标) | constraint(硬约束)
+type: preference          # preference(长期偏好) | goal(临时目标) | constraint(禁忌/过敏)
 scope: [kitchen]          # 或 [global]，决定哪些模块能看到
 source: stated            # stated(用户明说) | inferred(agent 推断)
 confidence: high
-enforcement: soft         # soft(进 prompt/评分) | hard(在代码里过滤)
+enforcement: soft         # soft(倾向) | hard(要求模型排除)——两者都只是给模型的信号，见 §2.2 ②
 created: 2026-07-25
 expires: null             # goal / constraint 必须给日期
 status: active
@@ -201,20 +202,45 @@ status: active
 
 **① 检索：明确不上向量库。** 量级是几十到几百条，**关键词 + scope 过滤在这个规模上完胜 embedding，而且可调试**。做法：索引文件很小（一行一条 `- [不吃辣](no-spicy.md) — 排除中辣重辣`）全量读进来，再把 `scope` 命中当前域的 + `global` 的 `active` 记忆展开成完整文件。
 
-**② 注入：hard 约束绝不能只写进 prompt。**
+**② 注入：全部记忆交给 LLM 判断，并对准确性明示免责。**
 
-| 类型 | 落点 | 现有代码 |
-|------|------|---------|
-| **soft**（不吃辣、想少吃肉） | 渲染进 system prompt 的「关于你」区块，或进评分权重 | `src/lib/recommend/scoring.ts` |
-| **hard**（过敏、医疗禁忌） | **在代码里过滤掉，让模型根本看不到那些菜谱** | `src/lib/recommend/tiering.ts` |
+| 类型 | 落点 |
+|------|------|
+| 全部记忆（含过敏、禁忌） | 渲染进 system prompt 的「关于你」区块，由模型做选择与排除判断 |
 
-> 提示词遵从性永远不是 100%。把过敏原交给「希望模型记得」是不可接受的。
+配套**必须**有的两件事：
 
-**好消息：现有 A/B 分层天然支持这个**——不用新建机制，只是把「筛选器的值」从「用户当场点的」扩展成「记忆里长期存着的」。
+1. **设置页的免责声明** —— 明示过敏/禁忌只是模型对菜品做了筛查，**不保证准确**，请用户自行核对每道菜的成分。口径参照大模型「不提供医疗建议」的说明。
+2. **未配 API key 时的状态明示** —— 此时记忆**完全不生效**。UI 必须把这些记忆标成「未生效 —— 需配置 API key」，不能混在生效列表里让用户误以为它在保护自己。
+
+> ⚠️ **战略纠正（2026-08-04）**
+>
+> 本节原文是：「**hard 约束绝不能只写进 prompt**」，并规定 soft 偏好进 `scoring.ts` 评分、
+> **hard 约束（过敏、医疗禁忌）在 `tiering.ts` 里过滤掉让模型根本看不到**，理由是
+> 「提示词遵从性永远不是 100%，把过敏原交给『希望模型记得』是不可接受的」。**该方案已废弃。**
+>
+> **理由**：代码过滤要成立，前提是数据能支撑判断。实测种子数据后前提塌了——
+> 宫保鸡丁的食材表里**没有花生**，整个 `inventory/` 里也没有「花生」这个食材。
+> 食材表记的是冰箱库存，不是配料表，没人会录「一勺花生油」。
+> 于是「确定性代码过滤」在过敏这件事上，只会**确定性地把宫保鸡丁推给花生过敏的用户**。
+> 详细论证见 [DESIGN.md](./DESIGN.md) §6 #14 的纠正块。
+>
+> **同时废弃的还有这句**：「**好消息：现有 A/B 分层天然支持这个**——不用新建机制，只是把
+> 筛选器的值从『用户当场点的』扩展成『记忆里长期存着的』」。这句有两处不实：
+> ① 现有筛选器根本不在 `tiering.ts`，而在 `scoring.ts:21-52`；
+> ② 它是**相等**语义（`spiciness === 用户选的`），表达不了「排除中辣和重辣」。
+>
+> **因此**：不做代码级记忆过滤，全部交给 LLM，并用免责声明明示这是已知限制——
+> 而不是假装它已被代码解决。**代价已知并接受**：记忆层因此成为第一个需要 API key 的功能
+> （[DESIGN.md](./DESIGN.md) §6 #21）。
 
 **③ 写入：agent 提议，用户确认。** 记忆写入是显式工具调用（`remember(...)`），**新记忆要露出来给用户看一眼**。悄悄记下一条推断错的记忆、然后用它默默影响半年的推荐——这是这类产品让人觉得「阴间」的第一大来源。解药就是 Obsidian ethos：那是一个 markdown 文件夹，用户随时能打开改删。
 
-**④ 复盘：让记忆可解释。** 现有 UI 已经埋好了坑——推荐主推卡上有「**为什么推荐它：**」+ 最多 4 条理由（`RecommendedRecipe.reason`，`src/types/index.ts:106`）。**把命中的记忆直接写进那几条理由里**（「你说过不吃辣，已避开川辣类」）。一举解决三件事：可解释性、用户发现记忆错了、AI 价值可被感知。
+**④ 复盘：让记忆可解释。** 现有 UI 已经埋好了坑——推荐主推卡上有「**为什么推荐它：**」+ **最多 3 条**理由（`RecommendedRecipe.reason`，`src/types/index.ts:115`）。**把命中的记忆直接写进那几条理由里**（「你说过不吃辣，已避开川辣类」）。
+
+> ⚠️ 但这个坑比原先以为的浅：`buildReasons()`（`src/components/recommend/HeroCard.tsx:13`）把 `rec.reason` **push 在最后**再 `.slice(0, 3)`，
+> 而前三格常被「清库存 + 食材全齐 + 快手菜」占满——记忆理由会被静默切掉，**恰好在最需要解释的清库存档上不可见**。
+> 已定：**给记忆留固定槽位**（[Task/10](./Task/10-memory-layer.md) 决策 ⑧）。一举解决三件事：可解释性、用户发现记忆错了、AI 价值可被感知。
 
 > 为规则引擎做的那个「为什么推荐它」，恰好是 AI 记忆最好的展示位。
 
@@ -335,9 +361,9 @@ status: active
 | ~~07~~ | [~~Vault ↔ Supabase 双向导入导出~~](./Task/07-export-import.md) | — | — | ❌ **已取消**（占位保留）：主体入 04，残余入 14 |
 | 08 | [派生 SQLite 索引（性能预案）](./Task/08-local-data-layer.md) | Parking Lot | — | 🅿️ **条件触发**，不进路线图 |
 | 09 | [本地化增强：Docker / 局域网访问](./Task/09-local-web-service.md) | 本地化增强 | **04**（原 08） | 核心已入 04，剩增值项，可延后 |
-| 10 | [记忆层设计与实现](./Task/10-memory-layer.md) | 记忆层 | 05 | 待细化 |
+| 10 | [记忆层设计与实现](./Task/10-memory-layer.md) | 记忆层 | 05 | **决策已定稿，可开工**（12 条决策全部落定） |
 | 11 | [AI 录入折叠](./Task/11-ai-capture.md) | 二期 AI | 06, 04 | 待细化 |
-| 12 | [AI 命令层（function calling + BYOK）](./Task/12-ai-command-layer.md) | 二期 AI | 10 | 待细化 |
+| 12 | [AI 命令层（function calling + BYOK）](./Task/12-ai-command-layer.md) | 二期 AI | 10 | 待细化 ⚠️ **记忆的生效逻辑在这里，不在 10** |
 | 13 | [模块契约（entity / service / manifest）](./Task/13-module-contract.md) | 远期架构 | 12 | 待细化 |
 | 14 | [社区菜谱分享](./Task/14-community-sharing.md) | 远期架构 | 05, 04 | 待细化 |
 | 15 | [只读沙盒上线 cook.wreathmoon.com](./Task/15-readonly-sandbox-deploy-✅已完成.md) | 本地化收尾 | 04 | ✅ 已完成 |
