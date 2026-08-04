@@ -756,7 +756,7 @@ seedRecipes:     54   ✅ 这个数字是对的
 
 ### 剩余工作
 
-- ✅ **只读沙盒的实际部署** → 已拆成 [Task/15](./15-readonly-sandbox-deploy.md)，**2026-07-27 上线完成**，
+- ✅ **只读沙盒的实际部署** → 已拆成 [Task/15](./15-readonly-sandbox-deploy-✅已完成.md)，**2026-07-27 上线完成**，
   <https://cook.wreathmoon.com> 6 条验收全过
 - ⬜ 17 个 `no-unused-vars` warning（不阻断，随手清即可）—— **仍未处理**，实测确认仍是 17 个
 - ✅ **旧 Supabase 凭据已彻底清除（2026-07-27，作者执行）**：`.env.local` 已删除（实测文件不存在），
@@ -817,4 +817,4 @@ key 是**路由 glob**（picomatch 匹配路由路径）。用 `/**` 而不是�
 
 原完成记录和 SPEC §10.2 都把它写成「加一条环境变量」，语气像是可选。实际上**忘了设就整站起不来**：
 `ensureVaultInitialized()` 会尝试把 `seed/` 复制成 `data/`，而 Vercel 的文件系统只读 → `EROFS`。
-这条已写进 [Task/15](./15-readonly-sandbox-deploy.md) 的「风险与不做什么」。
+这条已写进 [Task/15](./15-readonly-sandbox-deploy-✅已完成.md) 的「风险与不做什么」。

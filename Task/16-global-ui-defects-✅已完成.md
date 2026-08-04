@@ -17,7 +17,7 @@
 而项目已有的 94 个测试**结构上不可能发现它们**——那批测试全是 node 环境的纯函数测试，
 碰不到 DOM，也碰不到浏览器渲染。
 
-第 1 条还直接让 [Task/15](./15-readonly-sandbox-deploy.md) 的验收标准第 3 条不成立：
+第 1 条还直接让 [Task/15](./15-readonly-sandbox-deploy-✅已完成.md) 的验收标准第 3 条不成立：
 只读拦截的服务端完全正确，但用户点下去看不到任何反馈。
 
 > **它们是怎么被发现的**：第 1 条是在验收 Task/15 时点「就做这道」发现的（页面毫无反应）；
@@ -193,7 +193,7 @@ b.scrollTop = 99999; b.scrollTop > 0 || b.scrollHeight <= b.clientHeight;  // �
 |------|------|
 | `DESIGN.md` ×4 处 | 声称「路线图保存在作者本地，未随仓库发布」——FUTURE.md 入库后**变成错误陈述**，已改回真实链接 |
 | [Task/03](./03-open-source-essentials-✅已完成.md) 决策 | 「FUTURE/Task 仅本地保留」已被推翻，按规范补了带日期的决策纠正块，未静默删除 |
-| [Task/15](./15-readonly-sandbox-deploy.md) Step 0 | 「4 个提交待 push」已过时 |
+| [Task/15](./15-readonly-sandbox-deploy-✅已完成.md) Step 0 | 「4 个提交待 push」已过时 |
 
 ### 教训
 

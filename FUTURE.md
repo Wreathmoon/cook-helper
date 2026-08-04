@@ -1,9 +1,10 @@
 # Cook Helper — Future
 
-> **版本**: v2.4 | **创建**: 2026-07-25 | **更新**: 2026-07-27 | **状态**: 规划中
+> **版本**: v2.5 | **创建**: 2026-07-25 | **更新**: 2026-07-28 | **状态**: 规划中
+> **v2.5 的变化**：[Task/15](./Task/15-readonly-sandbox-deploy-✅已完成.md) 正式闭合（线上 2026-07-28 复测通过，README 链接早已加上，此前索引里的「待确认」是陈旧状态）。**「本地化」整条线至此全部完成，下一件实质工作是 [Task/10](./Task/10-memory-layer.md) 记忆层——但它需要先定稿 7 条待决问题才谈得上写代码。**
 > **v2.4 的变化**：**本文档与 `Task/` 已纳入版本库**（推翻 [Task/03](./Task/03-open-source-essentials-✅已完成.md) 的原决策，理由见那里的决策纠正块）；07 正式取消、08 降级为条件触发的性能预案；新增 [Task/16](./Task/16-global-ui-defects-✅已完成.md)（toast 全哑 + 全站滚不动，均已修）。
-> **v2.3 的变化**：[Task/15](./Task/15-readonly-sandbox-deploy.md) 已上线——<https://cook.wreathmoon.com> 活着，6 条验收全过（其中第 3 条暴露出 antd × React 19 的 toast 静默失效，已修）。下一件实质工作回到 [Task/10](./Task/10-memory-layer.md)。
-> **v2.2 的变化**：04/05/06 的代码已落库（4 个提交）；只读沙盒的**部署**从 04 的尾注拆成独立的 [Task/15](./Task/15-readonly-sandbox-deploy.md)——它是当前唯一还能立刻推进的事。
+> **v2.3 的变化**：[Task/15](./Task/15-readonly-sandbox-deploy-✅已完成.md) 已上线——<https://cook.wreathmoon.com> 活着，6 条验收全过（其中第 3 条暴露出 antd × React 19 的 toast 静默失效，已修）。下一件实质工作回到 [Task/10](./Task/10-memory-layer.md)。
+> **v2.2 的变化**：04/05/06 的代码已落库（4 个提交）；只读沙盒的**部署**从 04 的尾注拆成独立的 [Task/15](./Task/15-readonly-sandbox-deploy-✅已完成.md)——它是当前唯一还能立刻推进的事。
 > **v2.1 的变化**：Task 04 / 05 / 06 已全部落地——本地 vault 成为唯一数据层，多用户与 Supabase 已从代码中移除。§1.6 ② 补上落地状态；任务索引已更新。
 > **v2.0 的变化**：去多用户 / 单用户本地 vault 部署定为主线（[Task/04](./Task/04-single-user-local-✅已完成.md)），§1.7 的「export/import 中间态」方案废弃，云端多用户版去留已决（不留）。
 > **定位**: 本文档描述「**往哪走、下一步做什么**」——架构演进方向、路线图、任务索引。
@@ -134,9 +135,10 @@ photos: [../../assets/kitchen/宫保鸡丁-01.jpg]
 - ✅ **Supabase 彻底删除**，Auth / RLS / 多租户 / OTP 注册 / 种子复制的 service_role 逻辑整块剥掉
 - ✅ `cook.wreathmoon.com` **降级为只读沙盒**：部署同一份代码 + `READ_ONLY=1`。Vercel 文件系统本来就只读，所以这个形态几乎白拿——读仓库里的种子 vault 展示，写入优雅报错，重启自动重置。**它同时顶替了被删掉的 `/demo` 页**
 
-> **落地状态（2026-07-26）**：代码侧已全部完成——`grep -ri supabase src/` 零结果，依赖已卸载，
+> **落地状态（2026-07-28 更新）**：代码侧已全部完成——`grep -ri supabase src/` 零结果，依赖已卸载，
 > `READ_ONLY=1` 的拦截、横幅与文案已实测通过（写入被拒且 `seed/` 校验和不变）。
-> **只差最后一步：把只读沙盒实际部署到 Vercel 并验证线上表现** —— 已拆成 [Task/15](./Task/15-readonly-sandbox-deploy.md)（需要作者的 Vercel 账号）。
+> **只读沙盒也已实际部署并验收**（[Task/15](./Task/15-readonly-sandbox-deploy-✅已完成.md) ✅）：<https://cook.wreathmoon.com> 线上运行，
+> 6 条验收全过，README 已挂演示链接。本条至此全部闭合。
 > ⚠️ 部署时 `READ_ONLY=1` 是**必填**而非可选：不设的话应用会尝试写 `data/`，Vercel 只读文件系统直接 EROFS。
 
 **③ 移动端** —— 本地 Web 服务方案下**手机暂时够不到本地文件**。这是选定路线的已知代价，不在短期解决。
@@ -296,7 +298,7 @@ status: active
 | **近期收尾** | 重设计落地、拆 1354 行巨石、开源要件（LICENSE！） | 01 – 03 ✅ 全部完成 |
 | **格式基石** | vault 纯文本格式规范、名称归一化 | 05 – 06 ✅ 全部完成 |
 | **本地化** | **去多用户 → 单用户本地 vault 部署** + 一期遗留收尾 | **04** ✅ 已完成（依赖 05、06） |
-| **本地化收尾** | 只读沙盒上线 cook.wreathmoon.com | 15（代码就绪，卡在部署） |
+| **本地化收尾** | 只读沙盒上线 cook.wreathmoon.com + 两个全局 UI 缺陷 | 15、16 ✅ 全部完成 |
 | **本地化增强** | Docker、局域网访问等自托管体验（可延后） | 09 |
 | **记忆层** | 记忆文件 + 检索 + hard/soft 接入 + 可解释 | 10 |
 | **二期 AI** | 录入折叠、命令层（BYOK） | 11 – 12 |
@@ -314,7 +316,7 @@ status: active
 ⚠️ **「编号 = 执行顺序」现在有一个例外：04。** 实际执行顺序是：
 
 ```
-01 ✅ → 02 ✅ → 03 ✅ → 05 ✅ → 06 ✅ → 04 ✅ → 15 🟢 → 16 ✅ → 10 → 11 → 12 → 13 → 14
+01 ✅ → 02 ✅ → 03 ✅ → 05 ✅ → 06 ✅ → 04 ✅ → 15 ✅ → 16 ✅ → 10 → 11 → 12 → 13 → 14
                                                           （09 可随时插入）
                                     07 ❌ 已取消 · 08 🅿️ 条件触发，均不在链上
 ```
@@ -338,7 +340,7 @@ status: active
 | 12 | [AI 命令层（function calling + BYOK）](./Task/12-ai-command-layer.md) | 二期 AI | 10 | 待细化 |
 | 13 | [模块契约（entity / service / manifest）](./Task/13-module-contract.md) | 远期架构 | 12 | 待细化 |
 | 14 | [社区菜谱分享](./Task/14-community-sharing.md) | 远期架构 | 05, 04 | 待细化 |
-| 15 | [只读沙盒上线 cook.wreathmoon.com](./Task/15-readonly-sandbox-deploy.md) | 本地化收尾 | 04 | 🟢 已上线待确认（6 条验收全过） |
+| 15 | [只读沙盒上线 cook.wreathmoon.com](./Task/15-readonly-sandbox-deploy-✅已完成.md) | 本地化收尾 | 04 | ✅ 已完成 |
 | 16 | [两个全局 UI 缺陷：toast 全哑 + 全站滚不动](./Task/16-global-ui-defects-✅已完成.md) | 本地化收尾 | 04 | ✅ 已完成 |
 
 ---
