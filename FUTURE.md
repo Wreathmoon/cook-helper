@@ -357,7 +357,7 @@ status: active
 | 01 | [落地并提交当前重设计](./Task/01-land-redesign-✅已完成.md) | 近期收尾 | — | ✅ 已完成 |
 | 02 | [recipes/calendar 视觉对齐 + 轻量组件重构](./Task/02-recipes-calendar-redesign-✅已完成.md) | 近期收尾 | 01 | ✅ 已完成 |
 | 03 | [开源要件：LICENSE(MIT) + README + 文档入库](./Task/03-open-source-essentials-✅已完成.md) | 近期收尾 | 01 | ✅ 已完成 |
-| **04** | [**去多用户：单用户本地 vault 部署 + 一期遗留收尾**](./Task/04-single-user-local-✅已完成.md) | **本地化** | **05, 06** ⚠️ | ✅ 已完成（沙盒待部署） |
+| **04** | [**去多用户：单用户本地 vault 部署 + 一期遗留收尾**](./Task/04-single-user-local-✅已完成.md) | **本地化** | **05, 06** ⚠️ | ✅ 已完成 |
 | 05 | [**Vault 纯文本格式规范 v0.1（基石）**](./Task/05-vault-format-spec-✅已完成.md) | 格式基石 | — | ✅ 已完成 |
 | 06 | [食材名称归一化 / 别名表](./Task/06-ingredient-name-normalization-✅已完成.md) | 格式基石 | 05 | ✅ 已完成 |
 | ~~07~~ | [~~Vault ↔ Supabase 双向导入导出~~](./Task/07-export-import.md) | — | — | ❌ **已取消**（占位保留）：主体入 04，残余入 14 |
