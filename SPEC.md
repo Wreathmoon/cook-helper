@@ -1,6 +1,7 @@
 # Cook Helper — Specification
 
-> **版本**: v2.4 | **更新**: 2026-08-04 | **状态**: 本地化改造完成，只读沙盒已上线并验收  
+> **版本**: v2.5 | **更新**: 2026-08-04 | **状态**: 本地化改造完成，只读沙盒已上线并验收，自托管 Docker 就绪  
+> **v2.5 的变化**：新增 §10.3 Docker 自托管（[Task/09](./Task/09-local-web-service-✅已完成.md)）——`Dockerfile` / `docker-compose.yml` / `.dockerignore`，`output: 'standalone'` 由 `BUILD_STANDALONE=1` 门控以保证 Vercel 路径不受影响；`init.ts` 的初始化判据从「目录存在」改成「目录非空」（Docker 绑定挂载会先建空目录）；测试 97 → 102。
 > **v2.4 的变化**：§3.2.1 补上两行 `overscroll-behavior` 的契约（`8a52ab9` 已进代码但当时没回写文档）——它们是内层滚动布局的必要配套，删了会「加载时手一滑页面就跳走」。
 > **v2.3 的变化**：新增 §3.2.1 页面滚动契约——修一个「所有页面都滚不动」的 bug 时发现这条约束从没写下来过。
 > **v2.2 的变化**：新增 §8.1 客户端启动补丁（antd × React 19，`message.*` 不打补丁会静默失效）；§1 补依赖、§9 补文件、§11 测试 94 → 97。
@@ -382,7 +383,7 @@ scoreAndSort(recipes, context) → sorted by score desc
 | 文件 | 职责 |
 |------|------|
 | `paths.ts` | vault 根目录解析（`VAULT_PATH` / `./data`）、`isReadOnly()`、各文件路径 |
-| `init.ts` | 首次启动把 `seed/` 复制成 `data/`；只读模式直接用 `seed/` |
+| `init.ts` | 首次启动把 `seed/` 复制成 `data/`；只读模式直接用 `seed/`。判断依据是**目录非空**而非目录存在——Docker 绑定挂载会先建一个空目录（见 §10.3 第 3 点） |
 | `reader.ts` | 全量解析进内存，产出 `Vault` |
 | `writer.ts` | 原子写 + 各实体的序列化；`assertWritable()` |
 | `schema.ts` | Zod schema + 报错翻译 |
@@ -440,6 +441,9 @@ Next 的 `instrumentation-client` 约定：**HTML 加载后、React 水合前**�
 ```
 cook-helper/
 ├── DESIGN.md / SPEC.md / README.md / CONTRIBUTING.md / LICENSE
+├── Dockerfile                   ← 自托管镜像（三阶段 → standalone，见 §10.3）
+├── docker-compose.yml           ←   一条命令起服务；端口默认只绑 127.0.0.1
+├── .dockerignore                ←   data/ 绝不进镜像
 ├── docs/
 │   ├── vault-format.md          ← ★ 数据文件格式规范
 │   ├── vault-examples/          ← 规范的样例文件
@@ -530,12 +534,39 @@ Vercel 的文件系统是只读的，`ensureVaultInitialized()` 在只读模式�
 > 这个问题**（本地就在项目目录里跑），所以改动 `next.config.ts` 或 vault 读取路径后，
 > 用 `.next/server/app/**/*.nft.json` 确认 seed 文件仍在追踪结果里。
 
-### 10.3 验证清单
+### 10.3 Docker（自托管）
+
+```bash
+docker compose up --build     # 首次
+docker compose up -d          # 之后
+docker compose down
+```
+
+→ <http://localhost:7474>。宿主机的 `./data` 挂进容器，和 `npm run dev` 用的是同一份数据，两种跑法可随时互换。
+
+| 文件 | 作用 |
+|------|------|
+| `Dockerfile` | 三阶段：`npm ci` → `BUILD_STANDALONE=1 npm run build` → 只带运行时文件的 alpine |
+| `docker-compose.yml` | 端口 / 卷 / 环境变量；**端口默认绑 `127.0.0.1:7474`** |
+| `.dockerignore` | 把 `data/`、`node_modules`、文档挡在构建上下文外 |
+
+镜像内的固定环境：`PORT=7474`、`HOSTNAME=0.0.0.0`（容器内不绑 0.0.0.0 端口映射就通不了）、`NODE_ENV=production`，以 `node` 用户（uid 1000）运行。
+
+**四个必须知道的点**：
+
+1. **`output: 'standalone'` 由 `BUILD_STANDALONE=1` 开关控制，不是常开。** 只有 Dockerfile 会设它。Vercel 那条已验收的部署路径（§10.2）因此**完全没被动过**——`npm run build` 不产出 `.next/standalone`。
+2. **`seed/` 在 Dockerfile 里被显式 `COPY` 了一遍**，尽管 `outputFileTracingIncludes` 理论上已经把它带进 standalone。多 200KB 换掉「追踪规则一变就线上空库」的整类事故。
+3. **空的绑定挂载目录必须能触发种子复制。** `docker compose up` 会先把宿主机 `./data` 建成空目录再挂进来；`ensureVaultInitialized()` 判断的是**目录非空**而不是目录存在（`src/lib/vault/init.ts` 的 `hasContent`），否则用户拿到的是空 vault 加一句「找不到 kitchen/」，且删不掉重来——挂载点每次都会被重建。
+4. ⚠️ **`ports` 前面那个 `127.0.0.1:` 是安全边界，不是格式噪音。** 去掉它，同一网段的任何设备都能打开这个应用，而**本应用没有任何认证——谁能连上谁就能读写你的全部数据**。
+
+> 用官方 node 镜像自带的 `node` 用户，**不要**再 `adduser --uid 1000`：会直接 `addgroup: gid '1000' in use` 构建失败。
+
+### 10.4 验证清单
 
 ```
 本地:
   npm run build            # 编译无错误（含 TypeScript 全量检查）
-  npx vitest run           # 97 tests 全绿
+  npx vitest run           # 102 tests 全绿
   npm run lint             # 0 error
 
 功能:
@@ -551,6 +582,12 @@ Vercel 的文件系统是只读的，`ensureVaultInitialized()` 在只读模式�
 只读沙盒:
   9. READ_ONLY=1 npx next dev → 顶部出现只读横幅
  10. 任何写操作被拒绝且 seed/ 文件校验和不变
+
+Docker:
+ 11. rm -rf data && docker compose up --build → ./data 出现 54 个菜谱目录
+ 12. docker port cook-helper → 只有 127.0.0.1:7474（不是 0.0.0.0）
+ 13. 改一条库存 → docker compose restart → 改动还在，没被 seed 盖回去
+ 14. npm run build（不带 BUILD_STANDALONE）→ 不产出 .next/standalone
 ```
 
 ---
@@ -562,6 +599,7 @@ Vercel 的文件系统是只读的，`ensureVaultInitialized()` 在只读模式�
 | `recommend/__tests__/tiering.test.ts` | 硬分档规则 | 10 |
 | `recommend/__tests__/scoring.test.ts` | 档内评分 | 8 |
 | `vault/__tests__/read-only.test.ts` | 只读模式拒绝写入且不落盘 | 5 |
+| `vault/__tests__/init.test.ts` | 首次启动种子复制（含**空目录**＝Docker 绑定挂载） | 5 |
 | `utils/__tests__/normalize-name.test.ts` | 归一化 + 别名 + 冲突检测 + 种子别名表质量 | 19 |
 | `utils/__tests__/error.test.ts` | 错误分类 + Server Action 外壳 | 11 |
 | `services/inventory/__tests__/` | 库存 CRUD、档位、回填（喂数组 + 真实落盘） | 17 |
@@ -569,7 +607,7 @@ Vercel 的文件系统是只读的，`ensureVaultInitialized()` 在只读模式�
 | `services/recipe/__tests__/photo.test.ts` | 照片落盘 / 删除 / frontmatter 同步 | 4 |
 | `seed/__tests__/seed-vault.test.ts` | 种子数据质量 + 首屏三档质量 | 11 |
 | `utils/__tests__/antd-message.test.ts` | antd 静态 message 在 React 19 下真的挂进 DOM（jsdom） | 3 |
-| **合计** | | **97** |
+| **合计** | | **102** |
 
 > `antd-message.test.ts` 是**唯一**跑在 jsdom 下的文件（靠文件头 `// @vitest-environment jsdom`，
 > 全局仍是 node 环境）。它守的那个 bug 之所以能活下来，正是因为其余测试全是纯函数测试、碰不到 DOM。

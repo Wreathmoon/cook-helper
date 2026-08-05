@@ -98,7 +98,7 @@
 ## 风险与不做什么
 
 - ⚠️ **导入是破坏性操作**。必须有 dry-run，且**先在测试账号跑通再碰主账号**
-- **不做**本地文件读写（那是 [Task/08](./08-local-data-layer.md) / [Task/09](./09-local-web-service.md)）；本任务的导出产物是「下载下来的一堆文件」，不是「App 直接读的目录」
+- **不做**本地文件读写（那是 [Task/08](./08-local-data-layer.md) / [Task/09](./09-local-web-service-✅已完成.md)）；本任务的导出产物是「下载下来的一堆文件」，不是「App 直接读的目录」
 - **不做**社区上传（[Task/14](./14-community-sharing.md)）；本任务只提供它需要的格式能力
 
 </details>

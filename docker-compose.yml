@@ -1,0 +1,38 @@
+# Cook Helper —— 自托管
+#
+#   docker compose up --build     首次启动（构建镜像）
+#   docker compose up -d          之后
+#   docker compose down           停
+#
+# 然后打开 http://localhost:7474。首次启动会把镜像里的 seed/ 复制进你挂载的
+# ./data，所以第一眼就有 54 道菜，而不是空壳。
+
+services:
+  cook-helper:
+    build: .
+    image: cook-helper:local
+    container_name: cook-helper
+
+    ports:
+      # ⚠️ 只绑本机回环。去掉前面的 `127.0.0.1:` 就变成任何能访问这台机器的
+      # 设备（同一个 WiFi 下的所有人）都能打开——**本应用没有任何认证，
+      # 谁能连上谁就能读写你的全部数据**。手机要连的话再改，别默认开着。
+      - "127.0.0.1:7474:7474"
+
+    volumes:
+      # 你的数据。这就是 README 里说的那个 data/ 目录——和 `npm run dev` 用的
+      # 是同一份，两种跑法可以随时互换。想放 iCloud / Dropbox 就把左边改掉。
+      - ./data:/app/data
+
+    environment:
+      # 容器内的 vault 位置，对应上面挂载点的右边。改挂载点时这里要跟着改。
+      - VAULT_PATH=/app/data
+      # 只读演示实例才需要：所有写入优雅拒绝。自己用的话保持注释掉。
+      # - READ_ONLY=1
+
+    # 绑定挂载的属主必须能被容器内的 nextjs 用户（uid 1000）写。
+    # 你的 uid 不是 1000 时（`id -u` 看一眼），取消下面两行的注释：
+    # user: "${UID:-1000}:${GID:-1000}"
+    # 并在启动前 `export UID GID`（bash 不默认导出这两个变量）。
+
+    restart: unless-stopped

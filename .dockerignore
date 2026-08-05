@@ -1,0 +1,35 @@
+# 构建上下文越小，docker build 越快，也越不容易把不该进镜像的东西带进去。
+# 注意：seed/ 必须**不**在这里——它是首次启动的数据来源。
+
+node_modules
+.next
+.git
+.gitignore
+
+# 你自己的数据。绝不进镜像：镜像是可分发产物，data/ 是私人内容
+data
+
+# 本地环境变量
+.env*
+!.env.example
+
+# 文档与设计过程文件，运行时用不到。
+# `*.md` 只匹配上下文根目录那一层（Go filepath.Match 语义，`*` 不跨 `/`），
+# 所以 seed/ 里的菜谱 .md **不会**被排掉——真排掉了镜像就没菜谱了。
+*.md
+Task
+docs
+claude design
+LICENSE
+
+# 工具与本地状态
+.claude
+.hermes
+.worktrees
+.vercel
+coverage
+*.tsbuildinfo
+npm-debug.log*
+Dockerfile
+docker-compose.yml
+.dockerignore

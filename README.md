@@ -73,6 +73,25 @@ npm run dev
 | `VAULT_PATH` | 把数据放到别处（比如 iCloud / Dropbox 目录）。默认 `./data` |
 | `READ_ONLY` | 设为 `1` 时所有写入被优雅拒绝，用于部署只读演示实例 |
 
+### 用 Docker 跑（不想装 Node 的话）
+
+```bash
+docker compose up --build    # 首次
+docker compose up -d         # 之后
+docker compose down          # 停
+```
+
+同样是 <http://localhost:7474>，同样首次启动就有 54 道菜。
+
+**数据还是你目录下的 `data/`**——容器挂的就是它，所以 `npm run dev` 和 Docker 两种跑法可以随时互换，不会各自存一份。想把数据放到 iCloud / Dropbox，改 [docker-compose.yml](./docker-compose.yml) 里 `volumes` 那行左半边即可。
+
+> ⚠️ **端口默认只对本机开放**（`127.0.0.1:7474:7474`）。
+> 想让手机连家里的机器，把那个 `127.0.0.1:` 前缀删掉就行——但**这个应用没有任何认证**，
+> 删掉之后同一个网络里的任何设备都能读写你的全部数据。自己权衡，别默认开着。
+
+Linux 上如果报权限错误：容器以 uid 1000 运行，你的 uid 不是 1000 时（`id -u` 看一眼），
+按 [docker-compose.yml](./docker-compose.yml) 里的注释取消 `user:` 那行的注释。
+
 ### 其他命令
 
 ```bash

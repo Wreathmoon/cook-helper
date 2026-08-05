@@ -147,7 +147,7 @@ npm run lint     →  36 errors / 48 warnings
 - [x] **写入原子性与并发** → **temp + rename，不加锁。** 写临时文件 → fsync → rename（同目录下原子操作）。单用户场景双重进程是使用失误，rename 原子性已足够。
 - [x] **照片怎么办** → **不附带种子照片。** 用 `NoPhotoCard` 兜底。用户自己拍的照片存在 `recipes/{菜谱名}/` 同目录下。
 - [x] **推荐算法配置外置** → **`vault/kitchen/config.yaml`**。字段沿用 `RECOMMEND_CONFIG`。首次从 `seed/kitchen/config.yaml` 复制。
-- [x] **局域网访问** → 归 [Task/09](./09-local-web-service.md)。本任务默认绑 `localhost` only，不堵死未来 `0.0.0.0` 的可能性。
+- [x] **局域网访问** → 归 [Task/09](./09-local-web-service-✅已完成.md)。本任务默认绑 `localhost` only，不堵死未来 `0.0.0.0` 的可能性。
 
 ## 实施前的决策修正（2026-07-26，动手当天核实代码后定）
 

@@ -1,6 +1,7 @@
 # Cook Helper — Future
 
-> **版本**: v2.6 | **创建**: 2026-07-25 | **更新**: 2026-08-04 | **状态**: 规划中
+> **版本**: v2.7 | **创建**: 2026-07-25 | **更新**: 2026-08-04 | **状态**: 规划中
+> **v2.7 的变化**：[Task/09](./Task/09-local-web-service-✅已完成.md) 完成——Docker + docker-compose 自托管落地（镜像 279MB，端口默认只绑回环）。原任务里的另外三个增值项（局域网启动脚本 / `npx` 一行命令 / 镜像推 registry）**明确不做**，理由见该任务决策 ⑤⑥⑦。README 已加「用 Docker 跑」一节，本任务无遗留缺口。**至此 09 之前的任务全部闭合，下一件实质工作仍是 [Task/10](./Task/10-memory-layer.md) 记忆层（决策已定稿，可直接开工）。**
 > **v2.6 的变化**：**§2.2 ② 的「hard 约束进代码」已推翻**——核实种子数据发现代码过滤依赖的配料信息根本不存在（宫保鸡丁的食材表里没有花生），改为全部记忆交由 LLM 判断 + 免责声明，见该节纠正块。连带后果：记忆层成为第一个需要 API key 的功能，且记忆的**生效逻辑移到 [Task/12](./Task/12-ai-command-layer.md)**，[Task/10](./Task/10-memory-layer.md) 只交付格式 / 存储 / 检索 / 展示 / 免责。Task 10 的 12 条决策已全部定稿。
 > **v2.5 的变化**：[Task/15](./Task/15-readonly-sandbox-deploy-✅已完成.md) 正式闭合（线上 2026-08-04 复测通过，README 链接早已加上，此前索引里的「待确认」是陈旧状态）。**「本地化」整条线至此全部完成，下一件实质工作是 [Task/10](./Task/10-memory-layer.md) 记忆层——但它需要先定稿 7 条待决问题才谈得上写代码。**
 > **v2.4 的变化**：**本文档与 `Task/` 已纳入版本库**（推翻 [Task/03](./Task/03-open-source-essentials-✅已完成.md) 的原决策，理由见那里的决策纠正块）；07 正式取消、08 降级为条件触发的性能预案；新增 [Task/16](./Task/16-global-ui-defects-✅已完成.md)（toast 全哑 + 全站滚不动，均已修）。
@@ -120,7 +121,8 @@ photos: [../../assets/kitchen/宫保鸡丁-01.jpg]
 - **单用户免登录**——Supabase Auth / RLS / 多租户**整块删除**（不是「旁路」，是删掉）
 - **仓库自带一份调好的默认 vault**，`git clone && npm install && npm run dev` 就能看到有内容的应用
 - vault 目录路径可配置
-- 详见 [Task/04](./Task/04-single-user-local-✅已完成.md)；Docker / 局域网访问等增值项见 [Task/09](./Task/09-local-web-service.md)
+- **可选 Docker 自托管**：`docker compose up --build`，宿主机 `./data` 挂进容器，和 `npm run dev` 共用同一份数据（[Task/09](./Task/09-local-web-service-✅已完成.md) ✅）
+- 详见 [Task/04](./Task/04-single-user-local-✅已完成.md)
 
 ### 1.6 三个必须正面回答的问题（不要假装它们不存在）
 
@@ -325,7 +327,7 @@ status: active
 | **格式基石** | vault 纯文本格式规范、名称归一化 | 05 – 06 ✅ 全部完成 |
 | **本地化** | **去多用户 → 单用户本地 vault 部署** + 一期遗留收尾 | **04** ✅ 已完成（依赖 05、06） |
 | **本地化收尾** | 只读沙盒上线 cook.wreathmoon.com + 两个全局 UI 缺陷 | 15、16 ✅ 全部完成 |
-| **本地化增强** | Docker、局域网访问等自托管体验（可延后） | 09 |
+| **本地化增强** | Docker + docker-compose 自托管 | 09 ✅ 已完成 |
 | **记忆层** | 记忆文件 + 检索 + hard/soft 接入 + 可解释 | 10 |
 | **二期 AI** | 录入折叠、命令层（BYOK） | 11 – 12 |
 | **远期架构** | 模块契约、社区分享 | 13 – 14 |
@@ -342,8 +344,8 @@ status: active
 ⚠️ **「编号 = 执行顺序」现在有一个例外：04。** 实际执行顺序是：
 
 ```
-01 ✅ → 02 ✅ → 03 ✅ → 05 ✅ → 06 ✅ → 04 ✅ → 15 ✅ → 16 ✅ → 10 → 11 → 12 → 13 → 14
-                                                          （09 可随时插入）
+01 ✅ → 02 ✅ → 03 ✅ → 05 ✅ → 06 ✅ → 04 ✅ → 15 ✅ → 16 ✅ → 09 ✅ → 10 → 11 → 12 → 13 → 14
+
                                     07 ❌ 已取消 · 08 🅿️ 条件触发，均不在链上
 ```
 
@@ -360,7 +362,7 @@ status: active
 | 06 | [食材名称归一化 / 别名表](./Task/06-ingredient-name-normalization-✅已完成.md) | 格式基石 | 05 | ✅ 已完成 |
 | ~~07~~ | [~~Vault ↔ Supabase 双向导入导出~~](./Task/07-export-import.md) | — | — | ❌ **已取消**（占位保留）：主体入 04，残余入 14 |
 | 08 | [派生 SQLite 索引（性能预案）](./Task/08-local-data-layer.md) | Parking Lot | — | 🅿️ **条件触发**，不进路线图 |
-| 09 | [本地化增强：Docker / 局域网访问](./Task/09-local-web-service.md) | 本地化增强 | **04**（原 08） | 核心已入 04，剩增值项，可延后 |
+| 09 | [自托管：Docker + docker-compose](./Task/09-local-web-service-✅已完成.md) | 本地化增强 | **04**（原 08） | ✅ 已完成（局域网脚本 / `npx` 明确不做） |
 | 10 | [记忆层设计与实现](./Task/10-memory-layer.md) | 记忆层 | 05 | **决策已定稿，可开工**（12 条决策全部落定） |
 | 11 | [AI 录入折叠](./Task/11-ai-capture.md) | 二期 AI | 06, 04 | 待细化 |
 | 12 | [AI 命令层（function calling + BYOK）](./Task/12-ai-command-layer.md) | 二期 AI | 10 | 待细化 ⚠️ **记忆的生效逻辑在这里，不在 10** |
