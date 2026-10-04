@@ -62,6 +62,14 @@ export interface InventoryViewProps {
   onDelete: (id: string) => void;
   onStockChange: (id: string, level: StockLevel) => void;
   readOnly?: boolean;
+  /**
+   * 页头右侧的额外操作（AI 录入入口）。
+   *
+   * 用插槽而不是把 `<CaptureEntry />` 直接写进来：view 层是纯展示的，
+   * 让它 import 一个会自己发 Server Action 的组件，等于给每个用到 view 的地方
+   * （包括测试）都绑上一次网络调用。
+   */
+  headerExtra?: React.ReactNode;
 }
 
 // ─── View ─────────────────────────────────────────────────────────────────────
@@ -74,6 +82,7 @@ export function InventoryView({
   onDelete,
   onStockChange,
   readOnly: readOnlyProp,
+  headerExtra,
 }: InventoryViewProps) {
   // 页面不必逐个传：只读状态从根布局的 ReadOnlyProvider 兜底。
   // hook 必须无条件调用，不能写成 `readOnlyProp ?? useReadOnly()`——`??` 会短路掉它
@@ -146,6 +155,7 @@ export function InventoryView({
         <span style={{ width: 180, display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid var(--line)', borderRadius: 10, padding: '6px 11px', fontSize: 12, color: 'var(--tx2)', background: 'var(--panel)' }}>
           🔍 搜索食材…
         </span>
+        {headerExtra}
         <button type="button" onClick={openAdd} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 13px', borderRadius: 10, border: '1px solid var(--primary-btn)', background: 'var(--primary-btn)', color: 'var(--primary-btn-tx)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
           ＋ 添加食材
         </button>

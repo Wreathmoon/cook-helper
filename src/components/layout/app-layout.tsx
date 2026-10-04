@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useThemeStore } from '@/store/theme-store';
 import { SunOutlined, MoonOutlined } from '@ant-design/icons';
+import { CommandBar } from '@/components/command';
 
 type IconProps = { size?: number };
 
@@ -17,6 +18,15 @@ const iconProps = (size: number) => ({
   strokeLinecap: 'round' as const,
   strokeLinejoin: 'round' as const,
 });
+
+function CommandIcon({ size = 16 }: IconProps) {
+  return (
+    <svg {...iconProps(size)}>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+      <path d="M5.5 6.5l2 1.5-2 1.5M8.5 10h2.5" />
+    </svg>
+  );
+}
 
 function RecommendIcon({ size = 16 }: IconProps) {
   return (
@@ -66,6 +76,15 @@ function CalendarIcon({ size = 16 }: IconProps) {
   );
 }
 
+function MemoryIcon({ size = 16 }: IconProps) {
+  return (
+    <svg {...iconProps(size)}>
+      <path d="M6.5 2.5a2 2 0 0 0-2 2 2 2 0 0 0-1 3.6A2 2 0 0 0 5 11.6a2 2 0 0 0 3.5-.6V3.6a2 2 0 0 0-2-1.1z" />
+      <path d="M9.5 2.5a2 2 0 0 1 2 2 2 2 0 0 1 1 3.6 2 2 0 0 1-1.5 3.5" />
+    </svg>
+  );
+}
+
 interface NavItem {
   key: string;
   label: string;
@@ -78,6 +97,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: '/recipes', label: '菜谱', icon: RecipesIcon },
   { key: '/inventory', label: '食材', icon: InventoryIcon },
   { key: '/utensils', label: '厨具', icon: UtensilsIcon },
+  { key: '/memory', label: '记忆', icon: MemoryIcon },
 ];
 
 function MainNav() {
@@ -134,6 +154,24 @@ export function AppLayout({
 
         <MainNav />
 
+        {/* 命令栏的可见入口。⌘K 是给知道的人用的快捷方式，但**一个只有快捷键的功能
+            等于不存在**——没人会去猜。这里放一个看得见的按钮，顺便把快捷键教出去。 */}
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('cook-helper:open-command'))}
+          className="nav-item"
+          title="问一句（⌘K）"
+          style={{
+            border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--tx2)',
+            cursor: 'pointer', fontSize: 12, margin: '6px 0 2px', width: '100%',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}
+        >
+          <CommandIcon size={16} />
+          <span className="nav-label" style={{ flex: 1, textAlign: 'left' }}>问一句</span>
+          <kbd className="nav-label" style={{ fontSize: 10, opacity: 0.7 }}>⌘K</kbd>
+        </button>
+
         <div className="user-area" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 8px 0', borderTop: '1px solid var(--line)', marginTop: 'auto' }}>
           <div className="user-text" style={{ minWidth: 0, flex: 1 }}>
             <b style={{ fontSize: 12, color: 'var(--tx)' }}>本机</b>
@@ -167,6 +205,10 @@ export function AppLayout({
           {children}
         </div>
       </main>
+
+      {/* 命令栏挂在根布局：它是跨页面的加速器，不属于任何一个页面。
+          没配 key 时它照样能被唤出——里面会说清楚缺什么，而不是按 ⌘K 毫无反应 */}
+      <CommandBar />
     </div>
   );
 }

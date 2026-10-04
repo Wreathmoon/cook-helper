@@ -20,6 +20,16 @@
 | 日历 `kitchen/calendar/*.yaml` | 4 条示例 | — |
 | 别名表 `kitchen/aliases.yaml` | 40+ 条 | 人工整理 |
 | 推荐配置 `kitchen/config.yaml` | — | 与 `src/lib/recommend/config.ts` 的默认值一致 |
+| 记忆 `memory/*.md` | 2 条示例 | 见下 |
+
+## `memory/` 里那两条是**示例**，也是格式样板
+
+一条 `preference`（不吃辣）、一条 `constraint`（花生过敏），都是 `expires: null` 的长期记忆
+——**故意不放 `goal`**：临时目标必须带失效期，而种子进了 git，几个月后它会变成一条
+永远显示「已过期」的示例。
+
+⚠️ 它们在 `/memory` 页面能看见、能删，但**不影响推荐**——记忆的判断全部交给 LLM
+（Task/10 决策 ④），没配 `AI_API_KEY` 时它们会被标成「未生效」。这不是 bug。
 
 ## 库存档位是**手工调**的，别用随机数替换
 

@@ -6,3 +6,5 @@ export { UtensilsView } from './UtensilsView';
 export type { UtensilsViewProps } from './UtensilsView';
 export { CalendarView } from './CalendarView';
 export type { CalendarViewProps } from './CalendarView';
+export { MemoryView } from './MemoryView';
+export type { MemoryViewProps } from './MemoryView';

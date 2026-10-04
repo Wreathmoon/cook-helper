@@ -7,8 +7,13 @@ import { getCalendarEntries } from '@/lib/services/calendar';
 import { tierRecipes } from '@/lib/recommend/tiering';
 import { scoreAndSort } from '@/lib/recommend/scoring';
 import { generateShoppingList, checkoutShoppingList } from '@/lib/services/shopping';
+import { getMemoriesForPrompt } from '@/lib/services/memory';
 import { getVault } from '@/lib/vault';
 import { guardData, guardResult } from '@/lib/utils/error';
+import { isAiConfigured } from '@/lib/ai/config';
+import { annotateWithMemory, type AnnotateCandidate } from '@/lib/ai/annotate';
+import { ANNOTATE_LIMIT } from '@/lib/ai/limits';
+import type { MemoryVerdict } from '@/lib/ai/verdict';
 import type { CalendarEntry, RecommendedRecipe, ShoppingListItem } from '@/types';
 
 export async function getRecommendations(filters?: {
@@ -50,6 +55,43 @@ export async function getRecommendations(filters?: {
     });
 
     return { data: scored, error: null };
+  });
+}
+
+/**
+ * 用记忆给推荐结果打标注 —— **单独一个 action，不并进 `getRecommendations`**。
+ *
+ * 推荐页是首屏。把模型调用放进它的加载路径，等于让每个配了 key 的人每次开首页
+ * 都多等一两秒，而且模型一挂首屏就白屏。所以规则引擎先秒出，这里随后异步补上。
+ *
+ * 顺带白拿一个保证：**没配 key 的人根本不会调到这里**，走的代码路径与
+ * Task/10 之前逐字相同。规则引擎不需要 key，这条不能破（DESIGN.md §6 #3/#4）。
+ *
+ * 入参只有 id：整份推荐结果带着菜谱正文，来回传两遍会撞上 Server Action 的 1MB 上限。
+ */
+export async function annotateRecommendationsAction(
+  recipeIds: string[]
+): Promise<{ data: MemoryVerdict[]; error: string | null }> {
+  if (!isAiConfigured() || recipeIds.length === 0) return { data: [], error: null };
+
+  return guardData([] as MemoryVerdict[], async () => {
+    const vault = getVault();
+    const byId = new Map(vault.recipes.map((item) => [item.id, item]));
+
+    const candidates: AnnotateCandidate[] = [];
+    for (const id of recipeIds.slice(0, ANNOTATE_LIMIT)) {
+      const recipe = byId.get(id);
+      if (!recipe) continue;
+      candidates.push({
+        id: recipe.id,
+        name: recipe.name,
+        spiciness: recipe.attributes?.spiciness ?? null,
+        diet_type: recipe.attributes?.diet_type ?? null,
+        cuisine: recipe.attributes?.cuisine ?? null,
+      });
+    }
+
+    return annotateWithMemory(getMemoriesForPrompt(vault), candidates);
   });
 }
 

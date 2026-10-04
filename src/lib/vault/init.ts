@@ -5,10 +5,10 @@
  * 所以 `git clone && npm install && npm run dev` 之后，第一眼看到的必须是
  * 一个有内容、可操作的应用（DESIGN.md §1.5）。
  */
-import { cpSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { VaultError } from './errors';
-import { isReadOnly, SEED_DIR, getVaultRoot } from './paths';
+import { isReadOnly, SEED_DIR, getVaultRoot, vaultPaths } from './paths';
 
 /**
  * @returns 实际使用的 vault 根目录。只读模式下直接用 `seed/`——
@@ -23,7 +23,10 @@ export function ensureVaultInitialized(): string {
   }
 
   const root = getVaultRoot();
-  if (hasContent(root)) return root;
+  if (hasContent(root)) {
+    ensureMemoryDir(root);
+    return root;
+  }
 
   if (!existsSync(SEED_DIR)) {
     throw new VaultError('io', `既没有 vault（${root}）也没有种子数据（${SEED_DIR}）。`, {
@@ -45,6 +48,26 @@ export function ensureVaultInitialized(): string {
   }
 
   return root;
+}
+
+/**
+ * 补一个空的 `memory/` 目录 —— 只对**记忆层之前就存在**的 vault 有意义。
+ *
+ * 那些 vault 是在 `memory/` 这个约定出现之前复制的，种子补不上它（种子只在
+ * data/ 为空时整体复制）。于是记忆页会让用户「去 `memory/` 下新建一个 .md」，
+ * 而那个目录根本不在——一句指不到地方的指引比不给指引更糟。
+ *
+ * ⚠️ 只建**空目录**，不塞任何文件。决策 ⑥ 的「只读不偷改」管的是用户的记忆内容，
+ * 让一个被文档承诺过的位置真实存在不在此列。
+ */
+function ensureMemoryDir(root: string): void {
+  const dir = vaultPaths.memoryDir(root);
+  if (existsSync(dir)) return;
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch {
+    // 建不出来就算了：loadMemories 对目录缺失是宽容的，不该为这个挡住整个应用
+  }
 }
 
 /**

@@ -13,6 +13,20 @@ export type Nutrition = '高蛋白' | '高碳水主食' | '多蔬菜纤维' | '�
 export type Scene = '工作日快手' | '周末慢做' | '宴客硬菜' | '夜宵';
 export type Cuisine = '川' | '粤' | '鲁' | '家常' | '其他';
 
+// 记忆层（Task/10）—— 落盘形态见 docs/vault-format.md §3.9
+/** `preference` 长期有效；`goal` 必须带 expires；`constraint` 是禁忌/过敏，可永久 */
+export type MemoryType = 'preference' | 'goal' | 'constraint';
+/** 只有这两个值。为还不存在的模块设计分类法是过度工程（Task/10 决策 ⑨） */
+export type MemoryScope = 'kitchen' | 'global';
+export type MemorySource = 'stated' | 'inferred';
+export type MemoryConfidence = 'high' | 'medium' | 'low';
+/**
+ * ⚠️ 两个值**都只是给模型的信号**，代码不据此分支（Task/10 决策 ③④）。
+ * `hard` = 要求排除，`soft` = 倾向。
+ */
+export type MemoryEnforcement = 'soft' | 'hard';
+export type MemoryStatus = 'active' | 'archived';
+
 // 实体接口 —— 落盘形态见 docs/vault-format.md
 //
 // 字段与 vault 文件的对应关系（docs/vault-format.md §1.4）：
@@ -113,6 +127,29 @@ export interface RecommendedRecipe {
   missingUtensils?: string[];
   clearStockIngredients?: string[];
   reason?: string;
+}
+
+/**
+ * 一条记忆 = `vault/memory/` 下的一个 markdown 文件。
+ *
+ * 这是项目里唯一「关于你这个人」的数据，也因此是唯一一份**用户必须能自己打开改删**
+ * 的数据（Task/10）。程序只读它、展示它、按用户指令删它，**从不背着用户改它**。
+ */
+export interface Memory {
+  id: string;
+  /** 文件名（含 `.md`），相对 `vault/memory/`。删除与「去改这个文件」的提示都靠它 */
+  fileName: string;
+  type: MemoryType;
+  scope: MemoryScope[];
+  source: MemorySource;
+  confidence: MemoryConfidence;
+  enforcement: MemoryEnforcement;
+  created: string;
+  /** ISO date。`null` = 永不过期（`preference` 与永久 `constraint`，如过敏） */
+  expires: string | null;
+  status: MemoryStatus;
+  /** frontmatter 之后的正文，就是记忆本身的内容 */
+  content: string;
 }
 
 // 购物清单

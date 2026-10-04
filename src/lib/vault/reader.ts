@@ -12,10 +12,12 @@ import type {
   CalendarEntry,
   InventoryCategory,
   InventoryItem,
+  Memory,
   Recipe,
   RecipePhoto,
   Utensil,
 } from '@/types';
+import { loadMemories } from '@/lib/memory/reader';
 import { RECOMMEND_CONFIG } from '@/lib/recommend/config';
 import { buildAliasMap, normalizeIngredientName } from '@/lib/utils/normalize-name';
 import { VaultError } from './errors';
@@ -52,6 +54,8 @@ export interface Vault {
   calendar: CalendarEntry[];
   /** 日历条目 id → 菜谱名称（vault 里日历按名称引用菜谱）*/
   calendarRecipeNames: Map<string, string>;
+  /** 记忆。**未做任何过期 / scope 过滤**——那是读取时的事（Task/10 决策 ⑥）*/
+  memories: Memory[];
   aliases: Map<string, string>;
   config: typeof RECOMMEND_CONFIG;
 }
@@ -87,6 +91,7 @@ export function loadVault(root: string): Vault {
     recipePhotos,
   } = readRecipes(root, aliases);
   const { calendar, calendarRecipeNames } = readCalendar(root, recipes);
+  const memories = loadMemories(root);
 
   return {
     root,
@@ -99,6 +104,7 @@ export function loadVault(root: string): Vault {
     utensils,
     calendar,
     calendarRecipeNames,
+    memories,
     aliases,
     config,
   };

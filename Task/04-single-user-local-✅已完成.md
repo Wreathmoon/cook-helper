@@ -535,7 +535,7 @@ data/
 - **不做**移动端适配。本地 Web 服务下手机够不到本地文件，这是已知代价（[FUTURE.md](../FUTURE.md) §1.6 ③）。若最终开放局域网访问，手机浏览器能连算附带收获，不是承诺。
 - **不做**同步机制。走 BYO（vault 扔进 iCloud / Dropbox，或用 git）。**不要自己写同步**——那是 Obsidian 都要收费的难题。
 - **不做**桌面端打包（Tauri / Electron），已明确短期不做。
-- **不做**任何为二期 AI 准备的改动——那些在 [Task/10](./10-memory-layer.md) 之后。
+- **不做**任何为二期 AI 准备的改动——那些在 [Task/10](./10-memory-layer-✅已完成.md) 之后。
 - **不做**「保留一个登录以防万一」。半个认证系统比没有认证更危险：它会让人以为数据被保护着。要么没有认证 + README 明确说明只跑 localhost，要么交给反向代理（Tailscale / Cloudflare Access）。
 - **不重构** Service 层的职责划分。改的是签名和后端，不是 A/B 分层结构——那个结构是一期验证过的资产（[FUTURE.md](../FUTURE.md) §4.1）。
 

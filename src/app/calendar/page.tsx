@@ -10,6 +10,7 @@ import {
   getRecipeDetailForCalendar, updateStockOnCookAction,
 } from '@/app/actions/calendar';
 import { CalendarView } from '@/components/views';
+import { CaptureEntry } from '@/components/capture';
 
 type EntryWithRecipe = CalendarEntry & { recipe?: { name: string } };
 type SimpleRecipe = { id: string; name: string };
@@ -105,6 +106,7 @@ export default function CalendarPage() {
       onCompleteEntry={handleComplete}
       onFetchDoneIngredients={handleFetchDoneIngredients}
       onDoneSubmit={handleDoneSubmit}
+      headerExtra={<CaptureEntry defaultMode="text" label="一句话记录" onApplied={fetchEntries} />}
     />
   );
 }

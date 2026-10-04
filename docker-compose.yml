@@ -29,6 +29,26 @@ services:
       - VAULT_PATH=/app/data
       # 只读演示实例才需要：所有写入优雅拒绝。自己用的话保持注释掉。
       # - READ_ONLY=1
+      #
+      # AI 录入与记忆需要下面四个（不配则这两个功能灰着，其余一切照常）。
+      # 本项目不绑厂商：任何 OpenAI 兼容端点都行，把 BASE_URL 指过去即可。
+      # ⚠️ **别把 key 直接写进这个文件**——它是要进版本库的。用 shell 环境变量
+      # 转发（下面这种写法），或者改用 env_file 指向一个已被 .gitignore 的文件。
+      # - AI_BASE_URL=${AI_BASE_URL}
+      # - AI_API_KEY=${AI_API_KEY}
+      # - AI_MODEL=${AI_MODEL}
+      # 默认模型不是多模态的（DeepSeek 这类）才需要单独指一个能看图的：
+      # - AI_VISION_MODEL=${AI_VISION_MODEL}
+      # 那个能看图的模型不在同一个端点上时（比如本机 Ollama），端点和 key 也能单独指。
+      # ⚠️ 容器里的 localhost 是容器自己——指向宿主机上的 Ollama 要用 host.docker.internal，
+      # 且 Linux 上还需要下面那行 extra_hosts。
+      # - AI_VISION_BASE_URL=http://host.docker.internal:11434/v1
+      # - AI_VISION_API_KEY=ollama
+
+    # host.docker.internal 在 Docker Desktop（macOS / Windows）上开箱可用，
+    # Linux 上要靠下面这行才解析得到宿主机：
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
 
     # 绑定挂载的属主必须能被容器内的 nextjs 用户（uid 1000）写。
     # 你的 uid 不是 1000 时（`id -u` 看一眼），取消下面两行的注释：

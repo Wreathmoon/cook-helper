@@ -1,6 +1,7 @@
 'use client';
 
 import type { RecommendedRecipe, RecommendTier } from '@/types';
+import { buildReasons } from '@/lib/recommend/reasons';
 import { NoPhotoCard } from './NoPhotoCard';
 import { StatusDot } from '@/components/shared/StatusDot';
 
@@ -9,26 +10,6 @@ const TIER_META: Record<RecommendTier, { label: string; cls: string; dot: 'good'
   need_shopping: { label: '差一两样', cls: 'ty', dot: 'warn' },
   clear_stock: { label: '该清库存了', cls: 'to', dot: 'notice' },
 };
-
-function buildReasons(rec: RecommendedRecipe) {
-  const reasons: { color: 'g' | 'y' | 'o' | 'soft'; text: string }[] = [];
-  const r = rec.recipe;
-
-  if (rec.clearStockIngredients?.length) {
-    reasons.push({ color: 'o', text: `${rec.clearStockIngredients.join('、')} 已放多天，建议尽快吃` });
-  }
-  if (rec.missingIngredients?.length) {
-    reasons.push({ color: 'y', text: `缺 ${rec.missingIngredients.join('、')}，买齐就能做` });
-  } else {
-    reasons.push({ color: 'g', text: '食材全齐，随时能做 ✓' });
-  }
-  if (r.cook_time_minutes && r.cook_time_minutes <= 15) {
-    reasons.push({ color: 'g', text: `快手菜，只需 ${r.cook_time_minutes} 分钟` });
-  }
-  if (rec.reason) reasons.push({ color: 'soft', text: rec.reason });
-  if (reasons.length === 0) reasons.push({ color: 'soft', text: '为你精选 ✨' });
-  return reasons.slice(0, 3);
-}
 
 const dotColorMap = { g: 'var(--success)', y: 'var(--warn)', o: 'var(--notice)', soft: 'var(--primary-soft)' };
 

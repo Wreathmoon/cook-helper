@@ -32,6 +32,8 @@ export function makeTestVault(spec: {
   calendar?: (Partial<CalendarEntry> & { id: string; date: string; recipe_id: string })[];
   calendarRecipeNames?: Record<string, string>;
   aliases?: Map<string, string>;
+  /** 记忆（Task/10）。绝大多数测试用不到，缺省是空数组 */
+  memories?: Vault['memories'];
 } = {}): Vault & { cleanup: () => void } {
   const root = mkdtempSync(path.join(tmpdir(), 'cook-helper-vault-'));
   const aliases = spec.aliases ?? new Map<string, string>();
@@ -103,6 +105,7 @@ export function makeTestVault(spec: {
     calendar,
     calendarRecipeNames: new Map(Object.entries(spec.calendarRecipeNames ?? {})),
     aliases,
+    memories: spec.memories ?? [],
     config: RECOMMEND_CONFIG,
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };

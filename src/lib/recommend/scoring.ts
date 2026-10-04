@@ -1,4 +1,5 @@
-// 二期将由 LLM 决策取代
+// 规则引擎的档内排序。**保留为基线，被 LLM 增强而不是取代**——
+// 本层不需要 API key，没配 key 时推荐照常工作（DESIGN.md §6 #3/#4）。
 import type { RecommendedRecipe, CalendarEntry, InventoryItem } from '@/types';
 import { RECOMMEND_CONFIG } from './config';
 

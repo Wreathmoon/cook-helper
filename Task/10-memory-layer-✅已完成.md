@@ -1,6 +1,6 @@
 # 10 — 记忆层设计与实现
 
-> **状态**: 决策已定稿（2026-08-04），可开工
+> **状态**: ✅ 已完成（2026-08-05）—— 决策定稿 2026-08-04，执行时新增 ⑬–⑯ 四条，见文末完成记录
 > **依赖**: 05
 > **被依赖**: 12 —— ⚠️ **本任务不含任何记忆生效逻辑**，见决策 ③
 > **阶段**: 记忆层
@@ -19,7 +19,8 @@
 
 ## 文件格式（草案）
 
-一条记忆一个文件 + 一个索引。位置：`vault/memory/`。
+一条记忆一个文件。位置：`vault/memory/`（**与 `kitchen/` 平级**，因为 `global` 记忆跨模块）。
+~~+ 一个索引~~ —— 索引已废弃，见下方草案纠正块（决策 ⑬）。
 
 ```markdown
 ---
@@ -30,7 +31,7 @@ source: stated            # stated(用户明说) | inferred(agent 推断)
 confidence: high
 enforcement: soft         # soft(倾向) | hard(要求模型排除) —— 见下方 ⚠️
 created: 2026-07-25
-expires: null             # goal / constraint 必须给日期
+expires: null             # goal 必须给日期；constraint 可永久（决策 ⑭）
 status: active
 ---
 不吃辣。推荐时排除「中辣」「重辣」；「微辣」先问一句。
@@ -57,19 +58,27 @@ status: active
 > 现在**两个值都只是给模型的信号**——`hard` 是「要求排除」，`soft` 是「倾向」。
 > 代码不再依据这个字段做任何分支（决策 ③④）。字段保留，是因为它对模型仍是有用的强度提示。
 
-索引 `vault/memory/index.md`——一行一条，全量读进来（很小）：
-
-```markdown
-- [不吃辣](no-spicy.md) — 排除中辣重辣，微辣需询问
-- [这月少吃肉](less-meat-2026-07.md) — 至 2026-07-31，素菜加权
-```
+> ⚠️ **草案纠正（2026-08-05，执行时定的）：不做 `index.md`**
+>
+> 本节原文规定还要有一份索引 `vault/memory/index.md`——「一行一条，全量读进来（很小）」，
+> 形如 `- [不吃辣](no-spicy.md) — 排除中辣重辣，微辣需询问`。**这份索引不做了。**
+>
+> **理由**：决策 ⑦ 已经定下「新增靠用户自己写文件」。一份需要人手同步的索引，
+> 漏更一次就变成「文件明明在 `memory/` 里、系统却看不见」——正是本任务
+> **最不可接受的失败态**（用户以为记忆在生效、实际什么都没发生）那一族，
+> 而且这次连一句报错都不会有。索引最初的动机是检索性能，但量级是几十到几百个文件，
+> 目录扫描本来就是毫秒级的，省不下什么。
+>
+> **因此**：`memory/` 下**每一个 `.md` 文件**都是一条记忆，放进去就算数。
+> 落在 `src/lib/memory/reader.ts` 与 `docs/vault-format.md` §3.9 末尾的更正块。
 
 ### 三个字段是骨架，缺一个就会烂
 
 - **`type` 决定生命周期**
   - `preference` 长期有效
   - `goal`（这月少吃肉）**必须带 `expires`**，否则三个月后它还在悄悄压着推荐
-  - `constraint`（术后软食、过敏）同样带失效期
+  - `constraint`：术后软食这类临时禁忌**应当**带失效期；**过敏是永久的，`expires` 可以为空**
+    （原文写的是「同样带失效期」，与本文档自己的花生过敏样例矛盾，已按决策 ⑭ 更正）
   > ⚠️ **不区分这三种，是个人 AI 记忆系统最常见的死法**——记忆只增不减，慢慢把推荐悄无声息地毒化。而且毒化过程没有报错、没有征兆，等你发现推荐变差时已经找不到原因。
 
 - **`source` + `confidence` 决定信任** — agent 推断出来的必须可被用户一键否掉
@@ -108,7 +117,8 @@ status: active
 
 量级是**几十到几百条**。在这个规模上，**关键词 + scope 过滤完胜 embedding，而且可调试**。
 
-做法：`index.md` 全量读入 → 按 `scope` 命中当前域的 + `global` 的 + `status: active` 的 → 展开成完整文件。
+做法：扫 `memory/*.md` 全量读入 → 按 `scope` 命中当前域的 + `global` 的 + `status: active` 且未过期的。
+（原文写的是「`index.md` 全量读入 → 展开成完整文件」，索引已按决策 ⑬ 废弃。）
 
 > 上向量数据库是这里最典型的过度工程（见 [DESIGN.md](../DESIGN.md) §13 反模式 3）。
 
@@ -137,7 +147,8 @@ status: active
 
 ### ④ 复盘：让记忆可解释
 
-现有 UI **已经埋好了坑**——推荐主推卡上有「**为什么推荐它：**」+ 最多 4 条理由（`RecommendedRecipe.reason`，`src/types/index.ts:106`）。
+现有 UI **已经埋好了坑**——推荐主推卡上有「**为什么推荐它：**」+ 最多 3 条理由
+（`RecommendedRecipe.reason`，落地后在 `src/types/index.ts:129`；渲染在 `src/lib/recommend/reasons.ts`）。
 
 **把命中的记忆直接写进那几条理由里**：
 
@@ -168,6 +179,22 @@ status: active
 - [x] **⑫ 只读沙盒要不要带记忆** → **带，但只展示列表与免责声明，不展示效果。**
   > 原问题写的是「要不要参与 `/demo`」，而 `/demo` 页已在 [Task/04](./04-single-user-local-✅已完成.md) 删除，现在是只读沙盒。
   > **注意期望值**：沙盒没有 API key（也不该有——BYOK，且公开实例放 key 会被滥用），所以记忆在沙盒里**不影响推荐**。它能展示的是「记忆长什么样、系统记得什么、免责声明说了什么」，展示不了「记忆如何改变推荐」。这削弱了原先「演示 AI 记忆很有说服力」的判断，但列表本身仍值得展示。
+- [x] **⑬ 要不要维护 `vault/memory/index.md`**（执行时新增，2026-08-05） → **不要，直接扫目录。**
+  论证见上方「文件格式」一节的草案纠正块。一句话：需要人手同步的索引，漏更就等于记忆无声失效。
+- [x] **⑭ `constraint` 要不要强制 `expires`**（执行时新增，2026-08-05） → **只有 `goal` 强制。**
+  > 原文「`constraint`（术后软食、过敏）同样带失效期」与本文档自己的花生过敏样例
+  > （`expires: null`）互相矛盾。**以样例为准**：过敏是永久的，强制失效期会把它写成谎话。
+  > 术后软食这类临时禁忌应当写 `expires`，但那是使用建议，不是 schema 能替用户判断的事。
+  > `goal` 仍是硬校验——没有失效期的临时目标正是「记忆无声毒化推荐」的那个毒源。
+- [x] **⑮ 记忆文件读坏了，页面显示什么**（执行时新增，2026-08-05） → **常驻错误卡片，不能只弹 toast。**
+  > 实测发现的坑：解析失败时列表是空的，而空列表会渲染成「**还没有任何记忆**」——
+  > 用户的文件明明都在 `memory/` 里，页面却自信地说一条都没有，toast 几秒后消失，
+  > 剩下的就是这句错话。这与本任务第一失败态同源。现在错误卡片常驻、指名文件与字段，
+  > 并明说「你的文件一个都没丢」。
+- [x] **⑯ 记忆层之前就存在的 vault 怎么办**（执行时新增，2026-08-05） → **启动时补一个空的 `memory/` 目录。**
+  > 种子只在 `data/` 为空时整体复制，所以老 vault 补不上 `memory/`。而空态会让用户
+  > 「去 `memory/` 下新建一个 .md」——指向一个不存在的目录。只建空目录、不塞任何文件，
+  > 决策 ⑥ 的「只读不偷改」管的是记忆内容，让一个被文档承诺过的位置真实存在不在此列。
 
 ## 交付物
 
@@ -218,3 +245,86 @@ status: active
 
 > ⚠️ **本节曾有一条相反的规定**：「**hard 约束的实现必须是确定性的代码过滤**。任何『把过敏信息写进 prompt 然后相信模型』的实现都不可接受，即使它看起来能工作」。
 > 该条已于 2026-08-04 推翻——**不是因为它的顾虑不对，而是因为它依赖的数据不存在**（宫保鸡丁的食材表里没有花生）。完整论证见本文件上方决策 ③ 的纠正块与 [DESIGN.md](../DESIGN.md) §6 #14。
+
+---
+
+## ✅ 完成记录
+
+> **完成日期**: 2026-08-05
+> **执行者**: Hermes Agent (orchestrator)
+
+### 执行结果
+
+| 检查项 | 结果 |
+|--------|:--:|
+| `npm run build` | ✅ 0 error，新增路由 `/memory`（static） |
+| `npx vitest run` | ✅ 128 passed（13 个文件），其中本任务新增 **31** 条 |
+| `npx eslint` | ✅ 0 error / 17 warning，**全部为改造前就有的**（改造前 18 条，本次顺手清掉 1 条） |
+| 记忆纯函数 | ✅ `src/lib/memory/`，5 个模块 + 18 条测试 |
+| `buildReasons()` 记忆槽位 | ✅ 抽成纯函数 `src/lib/recommend/reasons.ts` + 6 条测试 |
+| 「二期将由 LLM 决策取代」陈旧注释 | ✅ 3 处改掉（`tiering.ts` / `scoring.ts` / `recommend/index.ts`） |
+
+### 验收标准逐条核实（真机实测，非推演）
+
+| 验收条件 | 结果 |
+|---------|:--:|
+| 手写记忆文件 → 出现在「生效中」 | ✅ 配 `AI_API_KEY` 后，两条手写记忆进「生效中」，**无需重启**（vault store 的签名扫描覆盖了 `memory/`） |
+| 过期 goal → 进「已过期」+ 检索不返回 + 文件未被修改 | ✅ 三项全中。md5 实测 `9353d746…a532d6` → 读取与分区之后**逐字节一致** |
+| 未配 key 时标「未生效 —— 需配置 API key」 | ✅ 两条记忆落在独立的「未生效」分区，另有全宽警示横幅 |
+| 免责声明可见，含「不保证准确、请自行核对成分」 | ✅ 常驻卡片，且**不随 key 状态消失** |
+| UI 删除任意一条，列表立即更新 | ✅ 确认弹窗（含将被删除的文件路径）→ 删除 → 磁盘文件消失，列表 3 条 → 2 条 |
+| `buildReasons()` 记忆理由必在 3 条内 | ✅ 含「清库存 + 全齐 + 快手菜」占满的那个真实用例；记忆占第一格，让位的是「快手菜」 |
+| `npx vitest run` 全绿 | ✅ 128/128 |
+
+**额外实测的两条**（都不在原验收里，是实测时撞出来的，见决策 ⑮⑯）：
+
+- 只读沙盒（`READ_ONLY=1`）：读 `seed/memory/` 的两条示例，**删除按钮不渲染**，横幅 + 免责齐全 —— 符合决策 ⑫
+- 改坏一个记忆文件：错误卡片常驻，指名 `memory/broken.md` 与 `expires` 字段，并说明「你的文件一个都没丢」
+
+### 新增文件
+
+| 文件 | 行数 | 说明 |
+|------|-----:|------|
+| `src/lib/memory/schema.ts` | 47 | frontmatter 的 Zod schema；`goal` 缺 `expires` 是**硬校验** |
+| `src/lib/memory/reader.ts` | 74 | 扫 `memory/*.md`；**不读也不写任何索引文件**（决策 ⑬） |
+| `src/lib/memory/retrieve.ts` | 76 | 纯函数：`isExpired` / `isLive` / `retrieveMemories` / `partitionMemories` |
+| `src/lib/memory/writer.ts` | 44 | 只有删除；含只读拦截与路径穿越校验 |
+| `src/lib/memory/text.ts` | 27 | 免责声明与「未生效」文案——**是产品的一部分，不是法务装饰** |
+| `src/lib/memory/index.ts` | 20 | 桶文件 |
+| `src/lib/memory/__tests__/memory.test.ts` | 238 | 18 条 |
+| `src/lib/ai/config.ts` | 18 | `isAiConfigured()`，只回答「配没配 key」；真正的模型调用属 Task/12 |
+| `src/lib/services/memory/index.ts` | 64 | A 层：`listMemories` / `deleteMemory` / `getMemoriesForPrompt` |
+| `src/app/actions/memory.ts` | 24 | Server Action |
+| `src/app/memory/page.tsx` | 62 | 页面容器 |
+| `src/components/views/MemoryView.tsx` | 282 | 管理页：三分区 + 免责 + 未生效横幅 + 错误卡片 + 删除 |
+| `src/lib/recommend/reasons.ts` | 58 | 从 `HeroCard.tsx` 抽出的 `buildReasons()` + 记忆固定槽位 |
+| `src/lib/recommend/__tests__/reasons.test.ts` | 87 | 6 条 |
+| `seed/memory/*.md` | 14 × 2 | 一条 `preference` + 一条 `constraint`，**故意不放 `goal`**（种子进 git，会烂成永久「已过期」） |
+
+### 改动的既有文件
+
+| 文件 | 改动 |
+|------|------|
+| `src/types/index.ts` | 新增 `Memory` 与 6 个枚举 |
+| `src/lib/vault/paths.ts` | `memoryDir` / `memoryFile`；**`memory/` 与 `kitchen/` 平级** |
+| `src/lib/vault/reader.ts` | `Vault.memories` |
+| `src/lib/vault/init.ts` | 老 vault 补空 `memory/` 目录（决策 ⑯）+ 1 条测试 |
+| `src/components/recommend/HeroCard.tsx` | 改为引用抽出去的 `buildReasons` |
+| `src/components/layout/app-layout.tsx` | 导航加「记忆」 |
+| `src/lib/recommend/{tiering,scoring,index}.ts` | 陈旧注释；`tiering.ts` 顶部写明**这里将来也不该有记忆过滤** |
+| `docs/vault-format.md` | v0.2 → **v0.3**，新增 §3.9 记忆 |
+| `README.md` | 功能列表 + `AI_API_KEY` + 目录示意 |
+| `seed/README.md` | `memory/` 那两条示例的说明 |
+
+### 执行时新定的决策
+
+- **⑬ 不做 `memory/index.md`** —— 需要人手同步的索引，漏更就等于记忆无声失效
+- **⑭ 只有 `goal` 强制 `expires`** —— 原文与自己的花生过敏样例矛盾，以样例为准：过敏是永久的
+- **⑮ 读取失败要常驻错误卡片** —— 空列表会渲染成「还没有任何记忆」，是同源的自信错话
+- **⑯ 老 vault 启动时补空 `memory/` 目录** —— 否则空态在指一个不存在的目录
+
+### 遗留给 Task/12 的（本任务边界之内，刻意不做）
+
+- `rec.reason` **目前没有任何代码会写入**——槽位留好了，填什么由 Task/12 定
+- `getMemoriesForPrompt()` 已就位但无调用方，等 Task/12 接 system prompt
+- `AI_API_KEY` 目前**只被当作布尔量读取**，provider / model / 参数全部属 Task/12

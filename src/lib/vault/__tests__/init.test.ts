@@ -6,7 +6,7 @@
  * 加一句「找不到 kitchen/」——而且删不掉重来，因为挂载点每次都会被重建。
  */
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ensureVaultInitialized } from '../init';
@@ -75,5 +75,21 @@ describe('ensureVaultInitialized', () => {
     initAt(target);
 
     expect(existsSync(path.join(target, 'README.md'))).toBe(false);
+  });
+
+  it('记忆层之前就存在的 vault，补一个空的 memory/ 目录', () => {
+    // 这类 vault 是在 memory/ 这个约定出现之前复制的，种子补不上它——
+    // 而记忆页会让用户「去 memory/ 下新建一个 .md」，指不到地方比不指更糟
+    const target = path.join(workdir, 'data');
+    mkdirSync(path.join(target, 'kitchen'), { recursive: true });
+    writeFileSync(path.join(target, 'kitchen', 'utensils.yaml'), 'items: []\n');
+
+    initAt(target);
+
+    expect(existsSync(path.join(target, 'memory'))).toBe(true);
+    // 只建空目录，一个文件都不塞
+    expect(readdirSync(path.join(target, 'memory'))).toEqual([]);
+    // 顺带确认这不算「复制过种子」
+    expect(existsSync(path.join(target, 'kitchen', 'recipes'))).toBe(false);
   });
 });

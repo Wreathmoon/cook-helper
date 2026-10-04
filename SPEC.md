@@ -1,6 +1,9 @@
 # Cook Helper — Specification
 
-> **版本**: v2.5 | **更新**: 2026-08-04 | **状态**: 本地化改造完成，只读沙盒已上线并验收，自托管 Docker 就绪  
+> **版本**: v2.8 | **更新**: 2026-08-05 | **状态**: AI 录入 + AI 命令层已落地，记忆开始生效  
+> **v2.8 的变化**：新增 AI 命令层（[Task/12](./Task/12-ai-command-layer.md)）——`src/lib/ai/`（memory-prompt / annotate / verdict / limits / tools / agent）、`src/lib/services/command/`、`src/app/actions/command.ts`、`src/components/command/`（⌘K 命令栏）、`src/lib/recommend/compose.ts`。**记忆自此真的生效**：推荐页事后标注 + agent 的 system prompt。测试 154 → 171。⚠️ **写工具一个都没有**——模型只能调终止型的 `propose_changes`，写入永不进入 agent 循环（§5「AI 层」）。
+> **v2.7 的变化**：新增 AI 录入（[Task/11](./Task/11-ai-capture.md)）——`src/lib/ai/`（provider 中立的 BYOK：OpenAI 兼容端点 + 模型角色）、`src/lib/services/capture/`、`src/app/actions/capture.ts`、`src/components/capture/`；`inventory` service 新增 `restoreInventoryState()`（撤销专用，**不套「补货即盖时间戳」规则**）；`InventoryView` / `CalendarView` 新增 `headerExtra` 插槽；`isAiConfigured()` 语义收紧为「端点 + key + 模型都配齐」；测试 128 → 154。**首批需要 key 的功能从 1 个变成 2 个**（记忆 + AI 录入），其余一切仍然无 key 可用。
+> **v2.6 的变化**：新增记忆层（[Task/10](./Task/10-memory-layer-✅已完成.md)）——`vault/memory/*.md`、`src/lib/memory/`、`/memory` 管理页、`src/lib/ai/config.ts` 的 `isAiConfigured()`、`buildReasons()` 从 `HeroCard.tsx` 抽到 `src/lib/recommend/reasons.ts` 并加上记忆固定槽位；`Vault` 新增 `memories`；测试 102 → 128。⚠️ **本次不含任何让记忆影响推荐的代码**，那属 [Task/12](./Task/12-ai-command-layer.md)。
 > **v2.5 的变化**：新增 §10.3 Docker 自托管（[Task/09](./Task/09-local-web-service-✅已完成.md)）——`Dockerfile` / `docker-compose.yml` / `.dockerignore`，`output: 'standalone'` 由 `BUILD_STANDALONE=1` 门控以保证 Vercel 路径不受影响；`init.ts` 的初始化判据从「目录存在」改成「目录非空」（Docker 绑定挂载会先建空目录）；测试 97 → 102。
 > **v2.4 的变化**：§3.2.1 补上两行 `overscroll-behavior` 的契约（`8a52ab9` 已进代码但当时没回写文档）——它们是内层滚动布局的必要配套，删了会「加载时手一滑页面就跳走」。
 > **v2.3 的变化**：新增 §3.2.1 页面滚动契约——修一个「所有页面都滚不动」的 bug 时发现这条约束从没写下来过。
@@ -24,7 +27,9 @@
 | @ant-design/icons | 6.3.2 | 图标库 |
 | **@ant-design/v5-patch-for-react-19** | 1.0.3 | **必需**：antd v5 静态 `message.*` 在 React 19 下不打补丁就静默失效，见 §8.1 |
 | **yaml** | 2.9.0 | vault 文件解析 / 序列化 |
-| **zod** | 4.4.3 | vault schema 校验（产出可定位的报错） |
+| **zod** | 4.4.3 | vault schema 校验（产出可定位的报错）+ AI 结构化输出的 schema |
+| **ai** | 7.0.52 | AI SDK。用 `generateText` + `Output.object()`（v7 里 `generateObject` 已废弃） |
+| **@ai-sdk/openai-compatible** | 3.0.23 | **provider 中立**的接入层——不绑厂商，任何 OpenAI 兼容端点都能接 |
 | zustand | 5.0.14 | 客户端状态管理 |
 | dayjs | 1.11.21 | 日期处理 |
 | vitest | 4.1.9 | 单测框架 |
@@ -35,6 +40,9 @@
 | tsx | 4.23.0 | TS 脚本执行器 |
 
 **没有数据库驱动、没有 ORM、没有后端 SDK。** 数据层只依赖 `yaml` 和 Node 内置的 `fs`。
+
+**也没有任何厂商的模型 SDK。** `ai` + `@ai-sdk/openai-compatible` 是协议适配层，不是某一家的客户端——
+用户给什么端点和 key，就跟谁说话（§5 AI 层）。
 
 ---
 
@@ -54,11 +62,18 @@ data/kitchen/                     # 运行时 vault（.gitignore）
   aliases.yaml                    # 食材别名表
   config.yaml                     # 推荐引擎配置
 
+data/memory/                      # 记忆：一条一个 .md（**与 kitchen/ 平级**）
+  {任意名字}.md                  #   扫目录识别，**无索引文件**
+
 seed/                             # 随仓库发布的种子模板（进 git）
 ```
 
 `VAULT_PATH` 可把 vault 指到仓库外；默认 `./data`。首次启动时若 `data/` 不存在，
 `ensureVaultInitialized()` 会把 `seed/` 整个复制过去（排除 `README.md`）。
+
+它还会在 `data/` 已有内容时**补一个空的 `memory/` 目录**：记忆层之前就存在的 vault
+拿不到种子里的 `memory/`，而管理页空态会让用户「去 `memory/` 下新建一个 .md」。
+**只建空目录，不塞任何文件。**
 
 ### 2.2 关联键：名称，不是 UUID
 
@@ -89,6 +104,7 @@ interface Vault {
   utensils: Utensil[];
   calendar: CalendarEntry[];
   calendarRecipeNames: Map<string, string>;              // 日历条目 id → 菜谱名
+  memories: Memory[];                                    // 未做过期 / scope 过滤（那是读取时的事）
   aliases: Map<string, string>;                          // 别名 → 规范名
   config: typeof RECOMMEND_CONFIG;
 }
@@ -138,6 +154,7 @@ kitchen/inventory/vegetable.yaml 第 6 行：YAML 语法有误：Unexpected scal
 | `/recipes` | `recipes/page.tsx` | Client | 菜谱库 |
 | `/recipes/new` | `recipes/new/page.tsx` | Client | 新建菜谱 |
 | `/calendar` | `calendar/page.tsx` | Client | 烹饪日历 |
+| `/memory` | `memory/page.tsx` | Client | 记忆管理（**项目第一个设置类页面**） |
 | `/api/photo` | `api/photo/route.ts` | Route Handler | 读 vault 里的照片；`..` 越界 → 403 |
 
 ### 3.2 根布局
@@ -265,6 +282,51 @@ useEffect(() => {
 | `generateShoppingListAction(recipeIds[], includePlanned?)` | 生成购物清单 |
 | `checkoutShoppingListAction(inventoryIds[])` | 勾选回填为 enough |
 
+### 4.6 Memory (`src/app/actions/memory.ts`)
+
+| 函数 | 说明 |
+|------|------|
+| `getListMemories()` | → `MemoryOverview`：三个分区 + `aiConfigured` + `memoryDir` |
+| `deleteMemoryAction(id)` | 删掉磁盘上那个 `.md`。**没有新增 / 编辑 action**（Task/10 决策 ⑦） |
+
+### 4.7 Capture (`src/app/actions/capture.ts`)
+
+**抽取和落库是分开的两组 action，这是安全边界不是风格选择**（Task/11 决策 ⑦）：
+`captureXxx` 只读不写，产出提案；`applyXxx` 才写库。中间隔着的用户确认是这个功能唯一的安全带。
+
+| 函数 | 写库 | 说明 |
+|------|:----:|------|
+| `captureFromImageAction(formData)` | ❌ | 图片 → `InventoryProposal`。`formData` 带 `image` + `kind`(`photo`\|`receipt`) |
+| `captureFromTextAction(text)` | ❌ | 一句话 → `{kind:'cooked'\|'stock'\|'unknown'}` |
+| `ingredientsForRecipeAction(recipeId)` | ❌ | 用户手选菜谱后重新取主要食材 |
+| `applyInventoryCaptureAction(decisions)` | ✅ | → `CaptureSnapshot`（撤销依据） |
+| `applyCookedCaptureAction({recipeId,date,decisions})` | ✅ | → `CaptureSnapshot` |
+| `undoCaptureAction(snapshot)` | ✅ | 逆操作 |
+| `aiCaptureStatusAction()` | ❌ | `{enabled, reason}`，给入口按钮用 |
+
+### 4.8 Command (`src/app/actions/command.ts`)
+
+| 函数 | 写库 | 说明 |
+|------|:----:|------|
+| `runCommandAction(input)` | ❌ | 跑 agent → `{text, proposal, steps, rejected}`。提案在返回前已过 `validateProposal` |
+| `applyProposalAction(changes)` | ✅ | → `CaptureSnapshot` |
+| `undoProposalAction(snapshot)` | ✅ | **复用 Task/11 的 `undoCapture`**，不另写 |
+| `commandStatusAction()` | ❌ | `{enabled, reason}` |
+
+`src/app/actions/recommend.ts` 另加一个：
+
+| 函数 | 写库 | 说明 |
+|------|:----:|------|
+| `annotateRecommendationsAction(recipeIds)` | ❌ | 记忆标注。**没配 key 时直接返回空，一次请求都不发** |
+
+> ⚠️ **只读沙盒下命令栏仍可查询**（查询不写盘），但 `buildTools` 不给提案工具，
+> 模型因此根本提不出改动来。这与 Task/11 的「拦在入口」不同——那里拦是因为
+> 上传照片会真的烧 token，而这里查询本来就是允许的操作。
+
+> ⚠️ **每个 action 自己检查前置条件。** Server Action 是公开的 POST 端点，
+> UI 上按钮灰着不代表函数调不到。两道闸：只读沙盒（**拦在发请求之前**，不烧 token）、
+> 配置缺失（报出缺哪个环境变量）。
+
 ---
 
 ## 5. A 层 Service 纯函数
@@ -322,6 +384,136 @@ generateShoppingList(vault, recipeIds[], includePlanned?) → {data: ShoppingLis
 checkoutShoppingList(vault, inventoryIds[])               → {error}
 ```
 
+### Memory Service
+
+```
+listMemories(vault)                          → {data: MemoryOverview, error}
+deleteMemory(vault, id)                      → {error}
+getMemoriesForPrompt(vault)                  → Memory[]   ⚠️ 已就位，**目前无调用方**，等 Task/12
+```
+
+纯函数在 `src/lib/memory/retrieve.ts`，不碰文件系统：
+
+```
+isExpired(memory, at?)                       → boolean    expires 当天仍有效
+isLive(memory, at?)                          → boolean    active 且未过期
+retrieveMemories(memories, {scope, at?})     → Memory[]   命中当前域 + global
+partitionMemories(memories, {aiConfigured, at?})
+                                             → {effective, ineffective, expired}
+```
+
+> ⚠️ **没配 key 时 `effective` 恒为空**，所有活着的记忆落在 `ineffective`。
+> 这不是边界情况而是**默认状态**（Task/10 决策 ④⑤）。
+> 同样地，**两个 `enforcement` 值都不参与任何代码分支**——包括过敏。
+
+### Capture Service
+
+```
+buildInventoryProposal(vault, captures[], {suggestedLevel?})
+                                             → InventoryProposal   纯函数，不写盘
+buildCookedProposal(vault, rawName)          → CookedProposal      纯函数，不写盘
+mainIngredientsOf(vault, recipeId)           → ProposedIngredient[]
+applyInventoryDecisions(vault, decisions[])  → {data: CaptureSnapshot, error}
+applyCooked(vault, {recipeId,date,decisions})→ {data: CaptureSnapshot, error}
+undoCapture(vault, snapshot)                 → {error}
+```
+
+三条不变量：
+
+1. **`buildXxx` 不碰磁盘。** 用户没点确认之前 vault 里不该有任何变化。
+2. **归一化在这里做，不在模型里做**——`normalizeIngredientName(name, vault.aliases)`。
+   让模型自己归一化会绕过别名表，「西红柿」和「番茄」会重新变成两种食材。
+3. **`applyXxx` 中途失败也返回快照**，把「已经做成的部分」还给调用方——
+   否则用户会卡在一个改了一半、又撤不回去的状态里。
+
+> ⚠️ **撤销走 `restoreInventoryState()`，不走 `batchUpdateStockLevel()`。**
+> 后者有一条业务规则：档位变 `enough` 就视同补货、把 `last_restocked_at` 盖成今天。
+> 那条规则对「用户真的补货了」是对的，对「撤销一次误录入」是错的——
+> 一样放了 8 天的青菜撤销之后补货日期变成今天，它会**静默退出「清库存」推荐档**
+> （`tiering.ts:62` 按 `last_restocked_at` 算陈旧度），用户看不到任何异常。
+> 所以 `CaptureSnapshot.restore` 存的是 `{id, stock_level, last_restocked_at}` 三元组。
+
+### Command Service
+
+```
+validateProposal(vault, changes)   → {valid, rejected}   纯函数，在给用户看之前就查
+applyProposal(vault, changes)      → {data: CaptureSnapshot, error}
+```
+
+**撤销复用 Task/11 的 `undoCapture()`，不另写一份。** 理由不只是省代码：撤销的正确性
+有一条很容易漏的性质（回滚必须连 `last_restocked_at` 一起恢复），
+这种性质**只要存在第二份实现，就一定会有一份是错的**。
+
+能提的改动只有两类：日历条目、库存档位。**不给新增食材**——那是 Task/11 那条路径的活。
+
+### AI 层 (`src/lib/ai/`)
+
+**provider 中立的 BYOK**（Task/11 决策 ②③）：不绑任何厂商 SDK，接 OpenAI 兼容协议。
+
+```
+config.ts    readAiConfig()      → {config: AiConfig | null, missing: string[]}
+             isAiConfigured()    → boolean   端点 + key + 模型都配齐才算
+             getAiConfig()       → AiConfig  缺了就抛
+             describeMissing()   → string    「缺 AI_MODEL（默认模型…）」
+provider.ts  textModel()         → LanguageModel
+             visionModel()       → LanguageModel   端点/key/模型名逐项回落到文本角色
+             describeModelError(err, {vision})     原样透出 + 报出实际用的端点与模型
+structured.ts schemaInstruction(schema) → string   schema → 提示词（端点不支持严格模式时的唯一约束力）
+extract.ts   extractFromImage(file, 'photo'|'receipt') → IngredientCapture
+             extractFromText(input)                    → TextCapture
+vocab.ts     INVENTORY_CATEGORIES / STOCK_LEVELS      交给模型的枚举，编译期与 types 同步
+
+—— 以下为 Task/12 ——
+memory-prompt.ts  renderMemoryBlock(memories, at?)  → string   记忆 → 「关于你」区块
+                  hasLiveMemories(memories, at?)    → boolean
+annotate.ts       annotateWithMemory(memories, candidates)      推荐页标注（**服务端专用**）
+verdict.ts        applyMemoryVerdicts(recs, verdicts)           纯函数，**客户端安全**
+limits.ts         MAX_STEPS / ANNOTATE_LIMIT                    **零 import**，客户端安全
+tools.ts          buildTools(vault, {readOnly})                 7 个读工具 + 1 个终止型提案工具
+agent.ts          runAgent(vault, input, {readOnly})            循环，stepCountIs(8) + 120s
+```
+
+> ⚠️ **客户端组件绝不能从 `agent.ts` / `annotate.ts` import 运行时值。**
+> 一个被 import 的运行时值会带上它的整条依赖链，于是
+> `agent → tools → services → vault → node:fs` 全被拖进客户端 bundle，构建直接失败
+> （`the chunking context does not support external modules (request: node:fs)`）。
+> 纯常量住 `limits.ts`，纯函数住 `verdict.ts`，两者都只 import 类型。**这个坑踩过一次。**
+
+> **写操作不在 agent 循环里。** `propose_changes` 是一个**故意不带 `execute`** 的工具——
+> AI SDK 在「调用了没有 execute 的工具」时会停止循环并把调用交还，于是提案浮到 UI 等确认，
+> 落库由确定性代码在另一个 action 完成。这个功能的安全性不是靠审批逻辑写得对，
+> 而是靠**循环里根本没有写能力**。
+
+| 环境变量 | 必填 | 作用 |
+|---|:--:|---|
+| `AI_BASE_URL` | ✅ | OpenAI 兼容端点 |
+| `AI_API_KEY` | ✅ | 用户自己的 key，**只存在服务端** |
+| `AI_MODEL` | ✅ | 默认模型（文本角色） |
+| `AI_VISION_MODEL` | — | 视觉角色的模型名，缺省 = `AI_MODEL` |
+| `AI_VISION_BASE_URL` | — | 视觉角色的端点，缺省 = `AI_BASE_URL` |
+| `AI_VISION_API_KEY` | — | 视觉角色的 key，缺省 = `AI_API_KEY` |
+
+> **两个模型角色，不多不少。** 视觉要能单独指，是因为用户的默认模型可能不是多模态的
+> （DeepSeek 这类）。**不做能力探测**——OpenAI 兼容协议里问不出「这个模型支不支持图片」，
+> 猜测式降级会把一个清晰的配置问题变成玄学问题。让模型报错，原样透出 + 提示该配什么。
+>
+> **角色 = 端点 + key + 模型名，三件套各自独立回落**（Task/11 决策 ③ 修订，2026-08-05）。
+> 原先视觉角色只能换模型名——那默认了「另一个模型就在同一个端点上」，而这条出路
+> 最该生效的场景（云端文本模型 + 本机视觉模型）恰恰是两个端点。
+> 独立回落是要点：只换端点不换 key、只换模型名不换端点，都是真实配法。
+>
+> 结构化输出用 `generateText` + `Output.object({schema})`（AI SDK v7 里
+> `generateObject` 已废弃）。**没有任何「从散文里抠 JSON」的解析器**——
+> schema 不过就是失败，重试一次，再失败就报错。
+>
+> ⚠️ **`Output.object` 只负责事后校验，schema 要靠 `structured.ts` 自己写进提示词。**
+> 多数 OpenAI 兼容端点不支持 `json_schema`（实测 DeepSeek ❌ / Ollama ✅），
+> 而 `@ai-sdk/openai-compatible` 的 `supportsStructuredOutputs` 默认 false——
+> 那条路上 schema 会被**静默丢掉**，模型收不到任何字段信息。
+> 详见 Task/11 决策 ⑥ 修订与 ⑳：**不能假设端点的私有能力，正如不能假设厂商的私有 SDK。**
+
+---
+
 购物清单是**算出来的**，不落盘：选中菜谱缺的料 + 缺的厨具 + low/out 的调料主食蛋奶
 （+ 可选：日历上计划中的菜）。回填时才写库存。
 
@@ -330,7 +522,11 @@ checkoutShoppingList(vault, inventoryIds[])               → {error}
 ## 6. B 层推荐引擎
 
 > 二期由 LLM **增强而非替换**——规则引擎保留为基线，无 API key 时产品完全可用。
-> 代码在 `src/lib/recommend/`。**本次本地化改造中这三个文件逻辑一行未改。**
+> 代码在 `src/lib/recommend/`。`tiering.ts` / `scoring.ts` / `config.ts` 的**逻辑至今一行未改**。
+>
+> ⚠️ **记忆不进本层。** 过敏 / 禁忌的代码级过滤已被推翻（[DESIGN.md](./DESIGN.md) §6 #14）：
+> 菜谱的食材表记的是冰箱库存而不是配料表（宫保鸡丁的食材表里没有花生），
+> 在这里做确定性过滤只会**确定性地出错**。
 
 ### 配置常量 (`config.ts`)
 
@@ -375,6 +571,26 @@ scoreAndSort(recipes, context) → sorted by score desc
   不重样(最高权重) + 清库存 + 耗时匹配 + 营养搭配
   缺失维度优雅降级
 ```
+
+> 权重是**动态归一化**的（`scoring.ts` 末尾按实际用到的权重相除），
+> 四个默认值和为 1.0 是巧合——**将来加维度不用重新分配前四个**。
+
+### 推荐理由 (`reasons.ts`)
+
+```
+buildReasons(rec) → Reason[]   最多 MAX_REASONS (=3) 条
+```
+
+从 `HeroCard.tsx` 抽出来的纯函数——它现在有一条**必须成立的不变式**，得能被测试钉住：
+
+| 情况 | 输出 |
+|------|------|
+| `rec.reason` 为空 | 清库存 / 缺料或全齐 / 快手菜（与改造前一致） |
+| `rec.reason` 有值 | **它占第一格**，并挤掉信息量最低的「快手菜」（耗时在标签行另有显示） |
+
+> 为什么需要固定槽位：三格常被「清库存 + 全齐 + 快手菜」占满，记忆理由排第四**必被切**——
+> 而且恰好在最需要解释的清库存档上不可见。
+> ⚠️ **目前没有任何代码会写 `rec.reason`**，往槽位里填内容是 Task/12 的事。
 
 ---
 
@@ -451,11 +667,12 @@ cook-helper/
 │
 ├── seed/                        ← ★ 随仓库发布的种子 vault（进 git）
 │   ├── README.md                ←   种子怎么调、last_restocked_at 的坑
-│   └── kitchen/
+│   ├── kitchen/
 │       ├── recipes/{54 个菜谱目录}/recipe.md
 │       ├── inventory/{5 个分类}.yaml
 │       ├── utensils.yaml / aliases.yaml / config.yaml
 │       └── calendar/2026-07.yaml
+│   └── memory/{2 条示例}.md      ←   故意不放 `goal`：种子进 git，会烂成永久「已过期」
 │
 ├── data/                        ← 运行时 vault（.gitignore，首次启动自动生成）
 │
@@ -464,31 +681,42 @@ cook-helper/
 │   ├── app/
 │   │   ├── layout.tsx           ← 根布局（AppLayout + ReadOnlyProvider）
 │   │   ├── page.tsx             ← → /recommend
-│   │   ├── recommend/ inventory/ utensils/ recipes/ recipes/new/ calendar/
+│   │   ├── recommend/ inventory/ utensils/ recipes/ recipes/new/ calendar/ memory/
 │   │   ├── api/photo/route.ts   ← 照片读取（含越界防护）
 │   │   └── actions/             ← Server Actions
-│   │       └── inventory.ts / recipe.ts / utensil.ts / calendar.ts / recommend.ts
+│   │       └── inventory.ts / recipe.ts / utensil.ts / calendar.ts / recommend.ts /
+│   │           memory.ts / capture.ts   ← capture: 抽取（只读）与落库（写）分开，见 §4.7
 │   │
 │   ├── components/
 │   │   ├── layout/              ← AppLayout / ThemeProvider / AntdRegistry / ReadOnlyProvider
-│   │   ├── views/               ← Recommend / Inventory / Utensils / Calendar 视图
+│   │   ├── views/               ← Recommend / Inventory / Utensils / Calendar / Memory 视图
+│   │   ├── capture/             ← ★ AI 录入 UI：CaptureEntry（入口按钮 + 状态）/
+│   │   │                            CapturePanel（四态状态机）/ CaptureConfirm（**两条管线共用**）
 │   │   ├── recommend/           ← HeroCard / AltCard / ShoppingPanel / FilterPopover / …
 │   │   ├── recipes/             ← WaterfallCard
 │   │   └── shared/              ← RecipeDetailModal / EmptyState / PageHeader / StatusDot / …
 │   │
 │   ├── lib/
 │   │   ├── vault/               ← ★ 数据层（见 §7）+ __tests__/
+│   │   ├── memory/              ← ★ 记忆层：schema/reader/retrieve/writer/text + __tests__/
+│   │   ├── ai/                  ← ★ provider 中立的 BYOK（见 §5「AI 层」）+ __tests__/
+│   │   │   └── config / provider / extract / vocab / text
 │   │   ├── services/            ← ★ A 层纯函数
 │   │   │   ├── inventory/ + __tests__/    recipe/ + __tests__/
 │   │   │   ├── utensil/  calendar/        shopping/ + __tests__/
-│   │   ├── recommend/           ← ★ B 层：config / tiering / scoring + __tests__/
+│   │   │   ├── memory/                     ← listMemories / deleteMemory
+│   │   │   └── capture/ + __tests__/       ← 提案 / 落库 / 撤销
+│   │   ├── recommend/           ← ★ B 层：config / tiering / scoring / reasons + __tests__/
 │   │   ├── seed/__tests__/      ← 种子 vault 质量守门
 │   │   ├── constants/text.ts
 │   │   └── utils/               ← normalize-name / error / compress-image + __tests__/
 │   │
 │   ├── store/ / types/
 │
-└── scripts/parse-howtocook.ts   ← 从 HowToCook 仓库解析菜谱的参考工具
+└── scripts/
+    ├── parse-howtocook.ts       ← 从 HowToCook 仓库解析菜谱的参考工具
+    └── verify-ai.ts             ← AI 配置冒烟测试。**会真的发请求**——单测里模型全是 mock 的，
+                                     跑再绿也证明不了你的 key 和端点是通的
 ```
 
 ---
@@ -599,7 +827,7 @@ Docker:
 | `recommend/__tests__/tiering.test.ts` | 硬分档规则 | 10 |
 | `recommend/__tests__/scoring.test.ts` | 档内评分 | 8 |
 | `vault/__tests__/read-only.test.ts` | 只读模式拒绝写入且不落盘 | 5 |
-| `vault/__tests__/init.test.ts` | 首次启动种子复制（含**空目录**＝Docker 绑定挂载） | 5 |
+| `vault/__tests__/init.test.ts` | 首次启动种子复制（含**空目录**＝Docker 绑定挂载；补 `memory/`） | 6 |
 | `utils/__tests__/normalize-name.test.ts` | 归一化 + 别名 + 冲突检测 + 种子别名表质量 | 19 |
 | `utils/__tests__/error.test.ts` | 错误分类 + Server Action 外壳 | 11 |
 | `services/inventory/__tests__/` | 库存 CRUD、档位、回填（喂数组 + 真实落盘） | 17 |
@@ -607,12 +835,29 @@ Docker:
 | `services/recipe/__tests__/photo.test.ts` | 照片落盘 / 删除 / frontmatter 同步 | 4 |
 | `seed/__tests__/seed-vault.test.ts` | 种子数据质量 + 首屏三档质量 | 11 |
 | `utils/__tests__/antd-message.test.ts` | antd 静态 message 在 React 19 下真的挂进 DOM（jsdom） | 3 |
-| **合计** | | **102** |
+| `memory/__tests__/memory.test.ts` | 记忆读取 / 校验 / `expires` 读时过滤 / 分区 / 删除 | 18 |
+| `recommend/__tests__/reasons.test.ts` | `buildReasons()` 的记忆固定槽位 | 6 |
+| `ai/__tests__/ai.test.ts` | 配置读取 / 视觉角色回落 / schema / 重试**只重一次** | 13 |
+| `services/capture/__tests__/` | 归一化分组 / 菜谱匹配不猜 / 落库 / **撤销不篡改 `last_restocked_at`** | 13 |
+| `ai/__tests__/command.test.ts` | 记忆渲染 / 过期不进 prompt / **下沉不删除** / 提案校验 / 落库与撤销 | 17 |
+| **合计** | | **171** |
 
 > `antd-message.test.ts` 是**唯一**跑在 jsdom 下的文件（靠文件头 `// @vitest-environment jsdom`，
 > 全局仍是 node 环境）。它守的那个 bug 之所以能活下来，正是因为其余测试全是纯函数测试、碰不到 DOM。
 
 运行: `npx vitest run`
+
+> 记忆那 18 条里有两条是**不能删的守护**：
+> ① 过期记忆被过滤后比对 **md5 逐字节一致**（决策 ⑥：绝不改用户的文件）；
+> ② 没配 key 时活着的记忆全部落在「未生效」（决策 ⑤：用户以为过敏记忆在保护自己、实际什么都没发生）。
+
+> ⚠️ **`ai/__tests__` 里模型调用全部被 mock，它证明不了你的 key 和端点是通的。**
+> 那件事只有真实请求能证明，所以另有 `scripts/verify-ai.ts`。两者不能互相替代——
+> 单测全绿 + 配置写错，功能照样一点就崩。
+
+> capture 那 13 条里有一条是**不能删的守护**：撤销之后 `last_restocked_at` 必须回到原值。
+> 用 `batchUpdateStockLevel` 做撤销会把它盖成今天，让放了 8 天的食材静默退出「清库存」档——
+> 用户看不到任何异常，只是推荐从此少了一道该优先吃掉的菜。
 
 > ⚠️ **18 个推荐引擎测试（tiering 10 + scoring 8）是这个项目核心价值的回归基准。**
 > 它们完全独立于数据层——换数据层前后必须逐字未改且全绿。
@@ -631,6 +876,10 @@ Docker:
 | 厨具 | 4 | 炒锅 / 煮锅 / 蒸锅 / 电饭煲 |
 | 日历 | 4 | 3 条已完成 + 1 条计划中 |
 | 别名 | 40+ | 「番茄 = 西红柿」等 |
+| 记忆 | 2 | 一条 `preference`（不吃辣）+ 一条 `constraint`（花生过敏），都是 `expires: null` |
+
+> 种子里**故意没有 `goal`**：临时目标必须带失效期，而种子进了 git——
+> 几个月后它会变成一条永远显示「已过期」的示例。同一个坑对 `last_restocked_at` 也成立。
 
 档位不用 hash 生成——那样首屏推荐质量是碰运气的。调整规则与那个
 `last_restocked_at` 的坑见 [seed/README.md](./seed/README.md)。

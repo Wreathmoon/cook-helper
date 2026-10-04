@@ -5,6 +5,7 @@ import { message } from 'antd';
 import { getListInventory, addInventoryItemAction, updateInventoryItemAction, deleteInventoryItemAction } from '@/app/actions/inventory';
 import type { InventoryItem, StockLevel } from '@/types';
 import { InventoryView } from '@/components/views';
+import { CaptureEntry } from '@/components/capture';
 
 /** 表单交上来的形状 —— 与 addInventoryItemAction 的入参一致 */
 interface InventoryFormValues {
@@ -79,6 +80,7 @@ export default function InventoryPage() {
       items={items} loading={loading}
       onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete}
       onStockChange={handleStockChange}
+      headerExtra={<CaptureEntry defaultMode="photo" label="AI 录入" onApplied={fetchData} />}
     />
   );
 }

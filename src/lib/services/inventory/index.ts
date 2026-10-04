@@ -162,6 +162,47 @@ export async function updateStockOnCook(
   return batchUpdateStockLevel(vault, updates);
 }
 
+/**
+ * **回滚专用**：把食材恢复到某个历史状态，包括 `last_restocked_at`。
+ *
+ * 为什么不能用 `batchUpdateStockLevel` 做撤销：它有一条业务规则——档位变成
+ * `enough` 就视同补货、把 `last_restocked_at` 盖成今天。那条规则对「用户真的补货了」
+ * 是对的，对「撤销一次误录入」是错的：
+ *
+ * 一样放了 8 天的青菜，被 AI 误识别后确认落库、再撤销，档位是回来了，
+ * 但补货日期变成了今天——它于是**静默地从「清库存」档里消失**
+ * （`src/lib/recommend/tiering.ts:62` 按 `last_restocked_at` 算陈旧度）。
+ * 用户看不到任何异常，只是推荐从此少了一道该优先吃掉的菜。
+ *
+ * 撤销必须让世界回到原样，包括那些用户看不见的字段。
+ */
+export async function restoreInventoryState(
+  vault: Vault,
+  items: { id: string; stock_level: StockLevel; last_restocked_at: string | null }[]
+): Promise<{ error: string | null }> {
+  try {
+    assertWritable('撤销库存改动');
+
+    const now = new Date().toISOString();
+    const touched = new Set<InventoryCategory>();
+
+    for (const snapshot of items) {
+      const item = vault.inventory.find((existing) => existing.id === snapshot.id);
+      if (!item) continue;
+
+      item.stock_level = snapshot.stock_level;
+      item.last_restocked_at = snapshot.last_restocked_at; // ← 关键：原样写回，不套补货规则
+      item.updated_at = now;
+      touched.add(item.category);
+    }
+
+    for (const category of touched) writeInventoryCategory(vault, category);
+    return { error: null };
+  } catch (err) {
+    return { error: toMessage(err) };
+  }
+}
+
 /** 标记为已补货（购物清单回填用）*/
 export async function markRestocked(
   vault: Vault,

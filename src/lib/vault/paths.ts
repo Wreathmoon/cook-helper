@@ -48,6 +48,10 @@ export const vaultPaths = {
     path.join(root, 'kitchen', 'log', `${yearMonth}.jsonl`),
   aliases: (root: string) => path.join(root, 'kitchen', 'aliases.yaml'),
   config: (root: string) => path.join(root, 'kitchen', 'config.yaml'),
+  // 记忆**不在 kitchen/ 下面**：`scope: [global]` 的记忆（「我是极简主义者」）
+  // 天然跨模块，塞进厨房目录就把它降级成了厨房的东西（Task/10 决策 ⑨）
+  memoryDir: (root: string) => path.join(root, 'memory'),
+  memoryFile: (root: string, fileName: string) => path.join(root, 'memory', fileName),
 };
 
 /** 报错时把绝对路径缩成相对 vault 根的短路径——绝对路径对用户是噪音 */

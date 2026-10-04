@@ -12,9 +12,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.23",
     "@ant-design/icons": "^6.3.2",
     "@ant-design/pro-components": "^2.8.10",
     "@ant-design/v5-patch-for-react-19": "^1.0.3",
+    "ai": "^7.0.52",
     "antd": "^5.29.3",
     "dayjs": "^1.11.21",
     "next": "16.2.10",

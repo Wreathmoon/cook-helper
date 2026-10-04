@@ -33,6 +33,8 @@ export interface CalendarViewProps {
   /** "我做完了"提交：更新库存+标记完成 */
   onDoneSubmit?: (entryId: string, updates: { id: string; stock_level: StockLevel }[]) => Promise<void>;
   readOnly?: boolean;
+  /** 页头右侧的额外操作（AI 录入入口）。用插槽是为了让 view 层保持纯展示 */
+  headerExtra?: React.ReactNode;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -82,6 +84,7 @@ export function CalendarView({
   onFetchDoneIngredients,
   onDoneSubmit,
   readOnly: readOnlyProp,
+  headerExtra,
 }: CalendarViewProps) {
   // 页面不必逐个传：只读状态从根布局的 ReadOnlyProvider 兜底。
   // hook 必须无条件调用，不能写成 `readOnlyProp ?? useReadOnly()`——`??` 会短路掉它
@@ -213,6 +216,7 @@ export function CalendarView({
           </button>
           <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>{entries.length} 条记录</span>
         </div>
+        {headerExtra}
         {!readOnly && (
           <Button type="primary" icon={<PlusOutlined />} size="small" onClick={openAddModal}>
             ＋记一笔/提前规划
